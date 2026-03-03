@@ -19,7 +19,6 @@ from ..logger import logger
 MODEL_CONFIG = {
     "qwen3_moe": {
         "min_transformers_version": "5.0.0",
-        "max_transformers_version": "6.0.0",
         "checkpoint_mapping": [],
         "block_patch": [
             (
@@ -97,11 +96,8 @@ def pre_check_config(model_name: str | torch.nn.Module):
     cfg = MODEL_CONFIG[model_type]
 
     min_ver = cfg.get("min_transformers_version")
-    max_ver = cfg.get("max_transformers_version")
     tf_ver = version.parse(transformers.__version__)
     if min_ver and tf_ver < version.parse(min_ver):
-        return False
-    if max_ver and tf_ver > version.parse(max_ver):
         return False
     try:
         file_path = get_file_path_via_model_name(model_name, "model.safetensors.index.json")
