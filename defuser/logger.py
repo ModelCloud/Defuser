@@ -3,4 +3,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 
-from .defuser import convert_hf_model
+import logging
+
+logger = logging.getLogger("defuser")
