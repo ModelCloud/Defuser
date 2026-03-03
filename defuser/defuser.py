@@ -8,7 +8,7 @@ from torch import nn
 from defuser.utils.hf import apply_modeling_patch
 
 
-def convert_hf_model(model: nn.Module):
-    apply_modeling_patch(model)
+def convert_hf_model(model: nn.Module) -> bool:
+    return apply_modeling_patch(model)
 
 __all__ = ["convert_hf_model"]
