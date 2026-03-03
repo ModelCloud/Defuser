@@ -1,0 +1,85 @@
+name: Unit Tests
+
+on:
+  push:
+  repository_dispatch:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'GitHub ref: Branch, Tag or Commit SHA'
+        required: false
+        default: ''
+
+env:
+  ref: ${{ github.event.inputs.ref || github.ref }}
+
+concurrency:
+  group: ${{ github.ref }}-workflow-unit-tests
+  cancel-in-progress: true
+
+jobs:
+  list-test-files:
+    runs-on: ubuntu-24.04
+    outputs:
+      test-files: ${{ steps.files.outputs.test-files }}
+
+    steps:
+      - name: Checkout Codes
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          ref: ${{ env.ref }}
+
+      - name: List files
+        id: files
+        run: |
+          script="
+          import json
+          import os
+          import re
+
+          IGNORED_TEST_FILES = '${IGNORED_TEST_FILES}'
+
+          all_tests = [f.removesuffix('.py') for f in os.listdir('tests/') if f.startswith('test_') and f.endswith('.py') and f.strip().removesuffix('py') not in f'{IGNORED_TEST_FILES}']
+
+          print(f'{json.dumps(all_tests)}')
+          "
+
+          test_files=$(python3 -c "$script")
+          IFS='|' read -r test_files <<< "$test_files"
+
+          echo "test-files=$test_files" >> "$GITHUB_OUTPUT"
+
+          echo "Test files: $test_files"
+
+  test:
+    needs:
+      - list-test-files
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest ]
+        test_script: ${{ fromJSON(needs.list-test-files.outputs.test-files) }}
+    steps:
+      - name: Checkout Codes
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          ref: ${{ env.ref }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: 3.14
+          cache: 'pip'
+
+      - name: Install
+        run: |
+          pip install pip pytest tabulate regex setuptools build wheel -U
+          pip install -v .
+
+      - name: Test ${{ matrix.test_script }}
+        run: |
+          mkdir -p artifacts
+          pytest --durations=0 tests/${{ matrix.test_script }}.py --junitxml=artifacts/${{ runner.os }}-${{ matrix.test_script }}.xml
+
