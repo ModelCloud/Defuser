@@ -76,7 +76,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, macos-latest, windows-latest ]
-        py: [ '3.9', '3.10', '3.11', '3.12', '3.13', '3.14' ]
+        py: [ '39', '310', '311', '312', '313', '314' ]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout Codes
@@ -85,10 +85,9 @@ jobs:
           submodules: recursive
           ref: ${{ env.ref }}
 
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.py }}
-          cache: 'pip'
+      - uses: pypa/cibuildwheel@v3
+        env:
+          CIBW_BUILD: "cp${{ matrix.py }}-*"
 
       - name: Add msbuild to PATH
         if: runner.os == 'Windows'
