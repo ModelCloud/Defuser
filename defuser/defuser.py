@@ -3,4 +3,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 
-from .defuser import convert_hf_model
+from torch import nn
+
+from defuser.utils.hf import apply_modeling_patch
+
+
+def convert_hf_model(model: nn.Module):
+    apply_modeling_patch(model)
+
+__all__ = ["convert_hf_model"]
