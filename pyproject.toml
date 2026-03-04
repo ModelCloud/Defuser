@@ -38,8 +38,11 @@ dependencies = [
 Homepage = "https://github.com/ModelCloud/Defuser"
 
 [tool.setuptools]
-packages = ["defuser"]
-py-modules = ["setup_utils"]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["defuser*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
