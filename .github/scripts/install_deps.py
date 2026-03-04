@@ -17,18 +17,15 @@ def normalize_pkg_spec(s: str) -> str:
     if not s:
         return s
 
-    # 已是 git 形式，直接用
     if s.startswith("git+"):
         return s
 
-    # 裸 github URL
     if s.startswith("https://github.com/"):
         s = s.rstrip("/")
         if not s.endswith(".git"):
             s += ".git"
         return "git+" + s
 
-    # 其它（普通 pip 包）
     return s
 
 
@@ -37,10 +34,8 @@ def collect_pkgs(test_path: Path, deps: dict):
 
     common_pkgs = set(deps.get("common") or [])
 
-    # 文件级依赖（tests: 下）
     specific_pkgs.update(deps.get("tests", {}).get(test_path.name) or [])
 
-    # 目录级依赖（tests/...）
     test_path_str = test_path.as_posix()
     for key, value in deps.items():
         if not (isinstance(key, str) and key.startswith("tests/")):
@@ -48,15 +43,12 @@ def collect_pkgs(test_path: Path, deps: dict):
         if not test_path_str.startswith(key + "/"):
             continue
 
-        # 1) 目录直接是列表：tests/models: [jieba, ...]
         if isinstance(value, list):
             specific_pkgs.update(value)
 
-        # 2) 目录是 dict：tests/models: { test_x.py: [..], ... }
         elif isinstance(value, dict):
             specific_pkgs.update(value.get(test_path.name) or [])
 
-        # 3) 其它类型忽略/报错都行，这里选择忽略
         else:
             pass
 
