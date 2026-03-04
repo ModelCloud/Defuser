@@ -133,9 +133,9 @@ def apply_modeling_patch(model: torch.nn.Module) -> bool:
             names = []
             for n, m in model.named_modules():
                 if isinstance(m, orig_class):
-                    names.append(n)
-            for n in names:
-                model.set_submodule(n, custom_class(model.config), True)
+                    names.append((n, next(m.parameters()).dtype))
+            for (n, orig_dtype) in names:
+                model.set_submodule(n, custom_class(model.config).to(orig_dtype), True)
             logger.info(f"Patched module: {orig_path} -> {custom_path}")
             return True
         except Exception as e:
