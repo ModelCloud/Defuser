@@ -30,6 +30,9 @@ classifiers = [
   "Topic :: Text Processing :: Linguistic"
 ]
 keywords = ["Defuser", "Model", "HF", "Transformers"]
+dependencies = [
+  "transformers",
+]
 
 [project.urls]
 Homepage = "https://github.com/ModelCloud/Defuser"
