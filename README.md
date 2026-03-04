@@ -1,6 +1,6 @@
 
 <div align=center>
-<img width="40%" alt="image" src="https://github.com/user-attachments/assets/f801617b-8959-474a-a565-6b8897e2fcbf" />
+<img width="50%" alt="image" src="https://github.com/user-attachments/assets/f801617b-8959-474a-a565-6b8897e2fcbf" />
 <h1 align="center">Defuser</h1>
 </div>
 
