@@ -1,4 +1,10 @@
-# Defuser
+
+<div align=center>
+<img width="40%" alt="image" src="https://github.com/user-attachments/assets/f801617b-8959-474a-a565-6b8897e2fcbf" />
+<h1 align="center">Defuser</h1>
+</div>
+
+
 Model defuser helper for HF Transformers >= 5.0. In HF Transformers 5.x releases, many MoE modules became auto-stacked or auto-fused by new modeling code which has benefits but also downsides. 
 
 * Goal is to provide naive module/layer forwarding code for all models supported by HF transformers where run-time weight and structure level optimizations such weight merging, stacking, fusing are reversed so the model is operating in a simple naive state. 
