@@ -14,7 +14,7 @@ import importlib
 
 from typing import Final
 
-from ..logger import logger
+from defuser.logger import logger
 
 MODEL_CONFIG = {
     "qwen3_moe": {
