@@ -23,8 +23,7 @@ class LinearQwen3_5MoeSparseMoeBlock(ReplacementModuleBase):
         self.gate = original.gate
         text_config = config.get_text_config()
         self.shared_expert = original.shared_expert
-        with torch.device("meta"):
-            self.experts = SequentialQwen3_5MoeExperts(text_config, original.experts)
+        self.experts = SequentialQwen3_5MoeExperts(text_config, original.experts)
         self.shared_expert_gate = original.shared_expert_gate
         self.num_experts = text_config.num_experts
 
@@ -95,8 +94,7 @@ class SequentialQwen3_5MoeExperts(torch.nn.ModuleList):
         self.num_experts = original.gate_up_proj.shape[0]
         intermediate_size = config.moe_intermediate_size
 
-        with torch.device("meta"):
-            super().__init__([Qwen3_5MoeMLP(config, intermediate_size) for _ in range(self.num_experts)])
+        super().__init__([Qwen3_5MoeMLP(config, intermediate_size) for _ in range(self.num_experts)])
 
     def _materialize_weights(self, original) -> None:
         intermediate_size = original.down_proj.shape[-1]
