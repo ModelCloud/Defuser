@@ -10,6 +10,69 @@ from typing import Dict, Type
 from defuser.logger import logger
 from dataclasses import dataclass
 
+from tqdm import tqdm
+
+from defuser.utils.common import (
+    LazyImport,
+    is_transformers_version_greater_or_equal_5
+)
+
+
+BUILTIN_MODULES = {
+    # supports transformers >= 5.0.0
+    "qwen3_5_moe": LazyImport("defuser.modeling.fused_moe.qwen3_5_moe"),
+    "qwen3_5_moe_text": LazyImport("defuser.modeling.fused_moe.qwen3_5_moe"),
+}
+
+
+def is_custom_model(model: torch.nn.Module) -> bool:
+    """Check if the model has a custom replacement registered via BUILTIN_MODULES.
+
+    Returns True if the model's model_type matches a key in BUILTIN_MODULES.
+    """
+    if hasattr(model, "config") and hasattr(model.config, "model_type"):
+        return model.config.model_type in BUILTIN_MODULES
+    return False
+
+
+def _import_required_replacements(model: torch.nn.Module) -> None:
+    """Scan model and trigger lazy imports for registered replacement modules."""
+    if not is_custom_model(model):
+        return
+    model_type = model.config.model_type
+    _ = BUILTIN_MODULES[model_type].__name__  # Trigger lazy import
+    logger.debug(f"Loaded replacement module for {model_type}")
+
+
+def materialize_model_(model: torch.nn.Module) -> None:
+    def _materialize_module(module: torch.nn.Module) -> None:
+        if isinstance(module, ReplacementModuleBase):
+            module.materialize_weights()
+
+    model.apply(_materialize_module)
+
+    # check if any module on meta device remains
+    found_meta = False
+    for name, param in model.named_parameters():
+        if param.device.type == "meta":
+            logger.warning(f"Parameter {name} is still on meta device after materialization.")
+            found_meta = True
+    for name, buffer in model.named_buffers():
+        if buffer.device.type == "meta":
+            logger.warning(f"Buffer {name} is still on meta device after materialization.")
+            found_meta = True
+    if not found_meta:
+        logger.debug("All parameters and buffers have been materialized from meta device.")
+    release_original_module_(model)
+
+
+def release_original_module_(model: torch.nn.Module) -> None:
+    def _clear_source_module(module: torch.nn.Module) -> None:
+        if isinstance(module, ReplacementModuleBase):
+            module.release_original_module()
+
+    model.apply(_clear_source_module)
+
 
 class ReplacementModuleBase(ABC, torch.nn.Module):
     """
@@ -127,6 +190,134 @@ class ReplacementModuleBase(ABC, torch.nn.Module):
         """Mark the replacement module as materialized."""
         self._materialized = True
         self.release_original_module()
+
+
+def _log_first_moe_block(model: torch.nn.Module, label: str) -> None:
+    """Log the first experts module found in the model for debugging."""
+    for name, module in model.named_modules():
+        if name.endswith(".experts"):
+            logger.info(f"Experts ({label}) [{name}] ({module.__class__.__name__}):\n{module}")
+            return
+
+
+def _handle_moe_modules(model: torch.nn.Module) -> list[str]:
+    """Handle fused MOE modules using transformers' linear_loop backend.
+
+    Args:
+        model: The model to process
+
+    Returns:
+        List of module names that were processed
+    """
+    from defuser.modeling.fused_moe.moe_experts_interface import (
+        is_linear_loop_available,
+        prepare_model_for_moe_quantization,
+    )
+
+    if not is_linear_loop_available():
+        logger.warning(
+            "transformers' linear_loop experts interface not available (requires transformers 5.0+). "
+            "MOE modules with @use_experts_implementation decorator will fall back to custom replacements "
+            "if registered."
+        )
+        return []
+
+    # Use transformers' experts interface
+    unfused = prepare_model_for_moe_quantization(model)
+    if unfused:
+        logger.info(f"Prepared {len(unfused)} MOE modules for quantization")
+    return unfused
+
+
+def apply_replacements(
+    model: torch.nn.Module,
+    auto_detect_moe: bool = True,
+) -> torch.nn.Module:
+    """
+    Function to apply module replacements to a model.
+
+    This scans all modules in the model and replaces any registered modules with their
+    replacement equivalents. Non-permanent modules are tracked for later restoration.
+
+    The model is modified in-place, so the same model object should be used.
+
+    Args:
+        model: The model to apply module replacement to (modified in-place).
+        auto_detect_moe: If True, automatically detect and handle fused MOE modules
+            (transformers 5.0+ pattern). Default is True.
+
+    Returns:
+        The model with modules replaced.
+    """
+    _import_required_replacements(model)
+
+    _log_first_moe_block(model, "before replacement")
+
+    # Custom replacements first
+    if is_custom_model(model):
+        _apply_custom_replacements(model)
+    if auto_detect_moe and is_transformers_version_greater_or_equal_5():
+        _handle_moe_modules(model)
+
+    _log_first_moe_block(model, "after replacement")
+
+    return model
+
+
+def _apply_custom_replacements(model: torch.nn.Module) -> list:
+    """Scan model and replace registered modules with custom implementations.
+
+    Args:
+        model: The model to scan and apply replacements to (modified in-place).
+
+    Returns:
+        List of (name, replacement_class) tuples for replaced modules.
+    """
+    replaced = []
+
+    # Step 1: Collect all modules that need replacement
+    logger.debug("Scanning for modules to replace")
+    modules_to_replace = []
+    for name, module in model.named_modules():
+        # skip replaced modules
+        if isinstance(module, ReplacementModuleBase):
+            continue
+        class_name = module.__class__.__name__
+        if ReplacementModuleBase.is_registered(class_name) and ReplacementModuleBase.get_replacement_class(
+            class_name
+        ).is_to_be_replaced(module):
+            modules_to_replace.append((name, module, class_name))
+
+    # Step 2: Replace modules
+    if modules_to_replace:
+        logger.info(f"Found {len(modules_to_replace)} modules to replace")
+        for name, module, class_name in tqdm(modules_to_replace, desc="Replacing modules"):
+            module = model.get_submodule(name)
+            # The module might have been replaced earlier in the loop (parent-first replacement).
+            # Skip if the class has changed or it no longer matches replacement criteria.
+            if module.__class__.__name__ != class_name:
+                logger.debug(
+                    f"Skipping replacement for {name}: class changed from {class_name} to {module.__class__.__name__}"
+                )
+                continue
+            replacement_cls = ReplacementModuleBase.get_replacement_class(class_name)
+            if not replacement_cls.is_to_be_replaced(module):
+                logger.debug(f"Skipping replacement for {name}: no longer matches replacement criteria")
+                continue
+            replacement = replacement_cls.from_original(
+                module,
+                model.config,
+            )
+            model.set_submodule(name, replacement)
+            replaced.append((name, replacement_cls))
+    else:
+        logger.debug("No modules found for replacement")
+
+    # Log what was replaced
+    if replaced:
+        logger.info(f"Replaced {len(replaced)} modules")
+
+    return replaced
 
 
 @dataclass

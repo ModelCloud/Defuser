@@ -3,10 +3,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 
+import traceback
+
 import torch
 from torch import nn
 
 from packaging import version
+
 from transformers import AutoConfig
 import transformers
 import os
@@ -139,11 +142,10 @@ def apply_modeling_patch(model: torch.nn.Module) -> bool:
             logger.info(f"Patched module: {orig_path} -> {custom_path}")
             return True
         except Exception as e:
+            traceback.print_exc()
             logger.warning(f"Failed to patch {orig_path}: {e}")
             return False
     return False
 
 
-def convert_hf_model(model: nn.Module):
-    apply_modeling_patch(model)
 
