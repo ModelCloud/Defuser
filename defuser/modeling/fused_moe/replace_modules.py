@@ -304,10 +304,11 @@ def _apply_custom_replacements(model: torch.nn.Module) -> list:
             if not replacement_cls.is_to_be_replaced(module):
                 logger.debug(f"Skipping replacement for {name}: no longer matches replacement criteria")
                 continue
+            orig_dtype = next(module.parameters()).dtype
             replacement = replacement_cls.from_original(
                 module,
                 model.config,
-            )
+            ).to(orig_dtype)
             model.set_submodule(name, replacement)
             replaced.append((name, replacement_cls))
     else:
