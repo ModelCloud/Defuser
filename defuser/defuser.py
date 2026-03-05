@@ -8,11 +8,12 @@ from torch import nn
 from defuser.utils.hf import apply_modeling_patch
 from defuser.modeling.fused_moe.update_module import update_module
 
-def convert_hf_model(model: nn.Module):
+
+def convert_hf_model(model: nn.Module, cleanup_original: bool):
     # Patch modeling structure for legacy Qwen3 MoE
     is_applied = apply_modeling_patch(model)
     if not is_applied:
         # For Qwen3.5 MoE: defuse fused modules and tensors
-        model = update_module(model, cleanup_original=True)
+        model = update_module(model, cleanup_original=cleanup_original)
 
 __all__ = ["convert_hf_model"]

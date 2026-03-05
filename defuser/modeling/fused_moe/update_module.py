@@ -9,9 +9,7 @@ from defuser.modeling.fused_moe.replace_modules import apply_replacements, relea
 def update_module(
     model, cleanup_original: bool = True
 ):
-    print("xxx 1", model)
     model = apply_replacements(model)
-    print("xxx 2", model)
 
     if cleanup_original:
         release_original_module_(model)
