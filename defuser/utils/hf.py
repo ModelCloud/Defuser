@@ -16,13 +16,11 @@ from logbar import LogBar
 from packaging import version
 from transformers import AutoConfig
 
-from typing import Final
-
-from defuser.logger import logger
 from defuser.model_registry import MODEL_CONFIG, PATCH
 
-_ENV_VAR: Final[str] = "GPTQMODEL_USE_MODELSCOPE"
+logger = LogBar(__name__)
 
+_ENV_VAR: Final[str] = "GPTQMODEL_USE_MODELSCOPE"
 
 TRUTHFUL = {"1", "true", "yes", "on", "y"}
 
@@ -38,6 +36,7 @@ def env_flag(name: str, default: str | bool | None = "0") -> bool:
             return default
         value = default
     return str(value).strip().lower() in TRUTHFUL
+
 
 def modelscope_requested() -> bool:
     """
