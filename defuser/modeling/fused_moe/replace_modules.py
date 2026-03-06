@@ -7,6 +7,7 @@
 # at https://github.com/intel/auto-round/blob/main/auto_round/modeling/fused_moe/replace_modules.py
 
 from abc import ABC, abstractmethod
+import weakref
 
 import torch
 from typing import Dict, Type
@@ -110,9 +111,11 @@ class ReplacementModuleBase(ABC, torch.nn.Module):
 
     def __init__(self, original: torch.nn.Module):
         super().__init__()
+        self._original_module = original
+        self._tracker_name = str(id(self))
         _global_tracker.register_replacement(
-            name=str(id(self)),
-            original=original,
+            name=self._tracker_name,
+            original_class=original.__class__.__name__,
             replacement=self,
         )
         self._materialized = False
@@ -175,12 +178,14 @@ class ReplacementModuleBase(ABC, torch.nn.Module):
 
     def release_original_module(self) -> None:
         """Release reference to the original module to free memory."""
-        # Release from global tracker
+        self._original_module = None
         _global_tracker.release_original(self)
 
     def _get_original_module(self) -> torch.nn.Module:
         """Get the original module associated with this replacement."""
-        return _global_tracker.get_original(self)
+        if self._original_module is None:
+            raise RuntimeError("Original module has already been released.")
+        return self._original_module
 
     def post_process_materialization(self) -> None:
         """Mark the replacement module as materialized."""
@@ -319,12 +324,13 @@ def _apply_custom_replacements(model: torch.nn.Module) -> list:
 
 @dataclass
 class ReplacedModuleInfo:
-    original_module: torch.nn.Module
-    replacement_module: ReplacementModuleBase
+    original_module_class: str
+    replacement_module_class: str
+    replacement_module_ref: "weakref.ReferenceType[ReplacementModuleBase]"
 
 
 class ModuleReplacementTracker:
-    """Tracker to maintain mapping between replacement modules and their original modules.
+    """Tracker to maintain metadata for replacement modules.
 
     This is a singleton class - only one instance can exist.
     """
@@ -342,8 +348,8 @@ class ModuleReplacementTracker:
         if ModuleReplacementTracker._initialized:
             return
 
-        # Map from replacement module id to original module
-        self._replacement_to_original: Dict[int, torch.nn.Module] = {}
+        # Map from replacement module id to tracker name
+        self._replacement_to_name: Dict[int, str] = {}
         # Map from module name to ReplacedModuleInfo
         self._name_to_info: Dict[str, ReplacedModuleInfo] = {}
 
@@ -356,40 +362,65 @@ class ModuleReplacementTracker:
             cls._instance = cls()
         return cls._instance
 
-    def register_replacement(self, name: str, original: torch.nn.Module, replacement: ReplacementModuleBase) -> None:
+    def register_replacement(
+        self,
+        name: str,
+        original_class: str,
+        replacement: ReplacementModuleBase,
+    ) -> None:
         """Register a module replacement."""
-        self._replacement_to_original[id(replacement)] = original
-        self._name_to_info[name] = ReplacedModuleInfo(original_module=original, replacement_module=replacement)
+        replacement_id = id(replacement)
+        self._replacement_to_name[replacement_id] = name
+        self._name_to_info[name] = ReplacedModuleInfo(
+            original_module_class=original_class,
+            replacement_module_class=replacement.__class__.__name__,
+            replacement_module_ref=weakref.ref(replacement),
+        )
         logger.trace(f"Registered replacement for module: {name}")
 
-    def get_original(self, replacement: ReplacementModuleBase) -> torch.nn.Module:
+    def get_original(self, replacement: ReplacementModuleBase) -> torch.nn.Module | None:
         """Get the original module for a given replacement module."""
-        return self._replacement_to_original.get(id(replacement))
+        return replacement._original_module
 
-    def get_info_by_name(self, name: str) -> ReplacedModuleInfo:
+    def get_info_by_name(self, name: str) -> ReplacedModuleInfo | None:
         """Get replacement info by module name."""
-        return self._name_to_info.get(name)
+        info = self._name_to_info.get(name)
+        if info is None:
+            return None
+        if info.replacement_module_ref() is None:
+            del self._name_to_info[name]
+            return None
+        return info
 
     def release_original(self, replacement: ReplacementModuleBase) -> None:
         """Release the original module associated with a replacement module."""
         replacement_id = id(replacement)
-        if replacement_id in self._replacement_to_original:
-            original = self._replacement_to_original[replacement_id]
-            # Delete the original module to free memory
-            del original
-            del self._replacement_to_original[replacement_id]
+        name = self._replacement_to_name.pop(replacement_id, None)
+        if name is not None:
+            info = self._name_to_info.get(name)
+            if info is not None:
+                replacement_ref = info.replacement_module_ref()
+                if replacement_ref is None or replacement_ref is replacement:
+                    del self._name_to_info[name]
             logger.trace(f"Released original module for replacement {replacement_id}")
 
     def release_all_originals(self) -> None:
         """Release all tracked original modules."""
-        count = len(self._replacement_to_original)
+        count = 0
+        for info in self._name_to_info.values():
+            replacement = info.replacement_module_ref()
+            if replacement is not None and replacement._original_module is not None:
+                replacement._original_module = None
+                count += 1
+
+        self._replacement_to_name.clear()
+        self._name_to_info.clear()
         if count > 0:
-            self._replacement_to_original.clear()
             logger.debug(f"Released {count} original modules from tracker")
 
     def clear(self) -> None:
         """Clear all tracked information."""
-        self._replacement_to_original.clear()
+        self._replacement_to_name.clear()
         self._name_to_info.clear()
         logger.debug("Cleared module replacement tracker")
 
