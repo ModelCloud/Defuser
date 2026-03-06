@@ -7,14 +7,10 @@
 # at https://github.com/intel/auto-round/blob/main/auto_round/modeling/fused_moe/replace_modules.py
 
 from abc import ABC, abstractmethod
-import importlib
-import weakref
-
-import torch
-from typing import Dict, Type
-from defuser.logger import logger
 from dataclasses import dataclass
+import importlib
 from typing import Dict, Type
+import weakref
 
 import torch
 from logbar import LogBar
