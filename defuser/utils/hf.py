@@ -132,7 +132,7 @@ def pre_check_config(model_name: str | torch.nn.Module):
     return True
 
 
-def apply_modeling_patch(model: torch.nn.Module) -> bool:
+def patch(model: torch.nn.Module) -> bool:
     res = pre_check_config(model)
     if not res:
         return False

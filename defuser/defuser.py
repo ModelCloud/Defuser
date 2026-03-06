@@ -5,7 +5,7 @@
 
 from torch import nn
 
-from defuser.utils.hf import apply_modeling_patch
+from defuser.utils.hf import patch
 from defuser.modeling.fused_moe.update_module import update_module
 
 
@@ -41,7 +41,7 @@ def convert_hf_model(model: nn.Module, cleanup_original: bool):
     #
     # If this patch succeeds, it means the model is in the Qwen3 MoE format and
     # no further tensor transformation is required.
-    is_applied = apply_modeling_patch(model)
+    is_applied = patch(model)
     if not is_applied:
         # -----------------------------------------------------------------------
         # Step 2: Handle Qwen3.5 MoE checkpoints
