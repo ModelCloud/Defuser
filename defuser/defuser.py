@@ -9,7 +9,7 @@ from defuser.utils.hf import patch
 from defuser.modeling.fused_moe.update_module import update_module
 
 
-def convert_hf_model(model: nn.Module, cleanup_original: bool):
+def convert_hf_model(model: nn.Module, cleanup_original: bool = False) -> nn.Module:
     # Patch modeling structure for legacy Qwen3 MoE
     #
     # There are two slightly different checkpoint formats we need to support:
@@ -83,5 +83,6 @@ def convert_hf_model(model: nn.Module, cleanup_original: bool):
         # This ensures compatibility between the Qwen3.5 fused checkpoint format
         # and the runtime model implementation that operates on defused weights.
         model = update_module(model, cleanup_original=cleanup_original)
+    return model
 
 __all__ = ["convert_hf_model"]
