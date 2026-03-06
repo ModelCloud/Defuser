@@ -29,7 +29,7 @@ import torch
 from torch import nn
 from defuser.logger import logger
 
-from defuser.utils.device import clear_memory
+from defuser.utils.device import clear_memory, to_meta
 
 try:
     from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
@@ -360,10 +360,10 @@ def _unfuse_single_projection(
     # Release original parameter memory
     if not is_meta:
         try:
-            param.data = param.data.to_empty(device="meta")
+            setattr(module, proj_name, to_meta(param))
             if has_bias:
-                bias_param.data = bias_param.data.to_empty(device="meta")
-            logger.debug(f"Released memory for {proj_name} using to_empty(device='meta')")
+                setattr(module, bias_name, to_meta(bias_param))
+            logger.debug(f"Released memory for {proj_name} using to_meta()")
         except Exception:
             pass
 

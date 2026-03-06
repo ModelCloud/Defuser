@@ -13,7 +13,7 @@ from transformers.models.qwen3_5_moe.modeling_qwen3_5_moe import Qwen3_5MoeMLP
 from transformers.utils.versions import require_version
 
 from defuser.modeling.fused_moe.replace_modules import ReplacementModuleBase
-from defuser.utils.device import clear_memory, unsupported_meta_device
+from defuser.utils.device import clear_memory, to_meta, unsupported_meta_device
 
 require_version("transformers>=5.2.0")
 
@@ -113,5 +113,5 @@ class SequentialQwen3_5MoeExperts(torch.nn.ModuleList):
                 _update_parameter(self[i].up_proj, "weight", up_proj.contiguous())
                 _update_parameter(self[i].down_proj, "weight", down.contiguous())
             del gate_up, down, gate_proj, up_proj
-            original.to_empty(device="meta")  # release original experts parameters
+            to_meta(original)  # release original experts parameters
             clear_memory()
