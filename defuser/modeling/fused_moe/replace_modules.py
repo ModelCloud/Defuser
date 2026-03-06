@@ -7,6 +7,7 @@
 # at https://github.com/intel/auto-round/blob/main/auto_round/modeling/fused_moe/replace_modules.py
 
 from abc import ABC, abstractmethod
+import importlib
 import weakref
 
 import torch
@@ -19,7 +20,7 @@ from tqdm import tqdm
 from defuser.utils.common import (
     is_transformers_version_greater_or_equal_5
 )
-from defuser.utils.hf import MODEL_CONFIG, PATCH
+from defuser.model_registry import MODEL_CONFIG, PATCH
 
 
 def is_model_patchable(model: torch.nn.Module) -> bool:
@@ -33,12 +34,15 @@ def is_model_patchable(model: torch.nn.Module) -> bool:
 
 
 def _import_required_replacements(model: torch.nn.Module) -> None:
-    """Scan model and trigger lazy imports for registered replacement modules."""
+    """Import replacement modules required for the model's defuse workflow."""
     if not is_model_patchable(model):
         return
     model_type = model.config.model_type
-    _ = MODEL_CONFIG[model_type][PATCH.DEFUSE].__name__  # Trigger lazy import
-    logger.debug(f"Loaded replacement module for {model_type}")
+    module_path = MODEL_CONFIG[model_type].get(PATCH.DEFUSE)
+    if not module_path:
+        return
+    importlib.import_module(module_path)
+    logger.debug(f"Loaded replacement module for {model_type}: {module_path}")
 
 
 def materialize_model_(model: torch.nn.Module) -> None:

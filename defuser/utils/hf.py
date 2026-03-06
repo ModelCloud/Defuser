@@ -9,7 +9,6 @@
 import torch
 
 from packaging import version
-from enum import Enum
 
 from transformers import AutoConfig
 import transformers
@@ -19,39 +18,7 @@ import importlib
 from typing import Final
 
 from defuser.logger import logger
-from defuser.utils.common import (
-    LazyImport,
-)
-
-
-class PATCH(str, Enum):
-    DEFUSE = "defuse"
-    REPLACE_MODULE = "replace_module"
-
-
-MODEL_CONFIG = {
-    "qwen3_moe": {
-        "min_transformers_version": "5.0.0",
-        # structure path only replaces modeling structure
-        PATCH.REPLACE_MODULE: [
-            (
-                "transformers.models.qwen3_moe.modeling_qwen3_moe.Qwen3MoeSparseMoeBlock",
-                "defuser.modeling.unfused_moe.qwen3_moe.LinearQwen3MoeSparseMoeBlock",
-            )
-        ],
-    },
-    "qwen3_5_moe": {
-        "min_transformers_version": "5.2.0",
-        # defuse_patch include tensor defusing/materialization workflow
-        PATCH.DEFUSE: LazyImport("defuser.modeling.fused_moe.qwen3_5_moe"),
-    },
-    "qwen3_5_moe_text": {
-        "min_transformers_version": "5.2.0",
-        # defuse_patch include tensor defusing/materialization workflow
-        PATCH.DEFUSE: LazyImport("defuser.modeling.fused_moe.qwen3_5_moe"),
-    },
-
-}
+from defuser.model_registry import MODEL_CONFIG, PATCH
 
 _ENV_VAR: Final[str] = "GPTQMODEL_USE_MODELSCOPE"
 
@@ -166,4 +133,3 @@ def patch(model: torch.nn.Module) -> bool:
             logger.warning(f"Failed to patch {orig_path}: {e}")
             return False
     return False
-
