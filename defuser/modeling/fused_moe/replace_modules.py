@@ -18,7 +18,7 @@ from tqdm import tqdm
 from defuser.utils.common import (
     is_transformers_version_greater_or_equal_5
 )
-from defuser.utils.hf import MODEL_CONFIG
+from defuser.utils.hf import MODEL_CONFIG, PATCH
 
 
 def is_model_patchable(model: torch.nn.Module) -> bool:
@@ -36,7 +36,7 @@ def _import_required_replacements(model: torch.nn.Module) -> None:
     if not is_model_patchable(model):
         return
     model_type = model.config.model_type
-    _ = MODEL_CONFIG[model_type]["defuse_patch"].__name__  # Trigger lazy import
+    _ = MODEL_CONFIG[model_type][PATCH.DEFUSE].__name__  # Trigger lazy import
     logger.debug(f"Loaded replacement module for {model_type}")
 
 

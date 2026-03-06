@@ -9,6 +9,7 @@
 import torch
 
 from packaging import version
+from enum import Enum
 
 from transformers import AutoConfig
 import transformers
@@ -22,11 +23,17 @@ from defuser.utils.common import (
     LazyImport,
 )
 
+
+class PATCH(str, Enum):
+    DEFUSE = "defuse"
+    REPLACE_MODULE = "replace_module"
+
+
 MODEL_CONFIG = {
     "qwen3_moe": {
         "min_transformers_version": "5.0.0",
-        # structure_patch only replaces modeling structure
-        "structure_patch": [
+        # structure path only replaces modeling structure
+        PATCH.REPLACE_MODULE: [
             (
                 "transformers.models.qwen3_moe.modeling_qwen3_moe.Qwen3MoeSparseMoeBlock",
                 "defuser.modeling.unfused_moe.qwen3_moe.LinearQwen3MoeSparseMoeBlock",
@@ -36,12 +43,12 @@ MODEL_CONFIG = {
     "qwen3_5_moe": {
         "min_transformers_version": "5.2.0",
         # defuse_patch include tensor defusing/materialization workflow
-        "defuse_patch": LazyImport("defuser.modeling.fused_moe.qwen3_5_moe"),
+        PATCH.DEFUSE: LazyImport("defuser.modeling.fused_moe.qwen3_5_moe"),
     },
     "qwen3_5_moe_text": {
         "min_transformers_version": "5.2.0",
         # defuse_patch include tensor defusing/materialization workflow
-        "defuse_patch": LazyImport("defuser.modeling.fused_moe.qwen3_5_moe"),
+        PATCH.DEFUSE: LazyImport("defuser.modeling.fused_moe.qwen3_5_moe"),
     },
 
 }
@@ -139,7 +146,7 @@ def patch(model: torch.nn.Module) -> bool:
     model_type = getattr(model.config, "model_type")
     cfg = MODEL_CONFIG[model_type]
     # patch blocks
-    for orig_path, custom_path in cfg.get("structure_patch", []):
+    for orig_path, custom_path in cfg.get(PATCH.REPLACE_MODULE, []):
         orig_module_path, orig_class_name = orig_path.rsplit(".", 1)
         custom_module_path, custom_class_name = custom_path.rsplit(".", 1)
         try:
@@ -159,6 +166,4 @@ def patch(model: torch.nn.Module) -> bool:
             logger.warning(f"Failed to patch {orig_path}: {e}")
             return False
     return False
-
-
 
