@@ -16,25 +16,18 @@ from dataclasses import dataclass
 from tqdm import tqdm
 
 from defuser.utils.common import (
-    LazyImport,
     is_transformers_version_greater_or_equal_5
 )
-
-
-BUILTIN_MODULES = {
-    # supports transformers >= 5.0.0
-    "qwen3_5_moe": LazyImport("defuser.modeling.fused_moe.qwen3_5_moe"),
-    "qwen3_5_moe_text": LazyImport("defuser.modeling.fused_moe.qwen3_5_moe"),
-}
+from defuser.utils.hf import MODEL_CONFIG
 
 
 def is_custom_model(model: torch.nn.Module) -> bool:
-    """Check if the model has a custom replacement registered via BUILTIN_MODULES.
+    """Check if the model has a custom replacement registered via MODEL_CONFIG.
 
-    Returns True if the model's model_type matches a key in BUILTIN_MODULES.
+    Returns True if the model's model_type matches a key in MODEL_CONFIG.
     """
     if hasattr(model, "config") and hasattr(model.config, "model_type"):
-        return model.config.model_type in BUILTIN_MODULES
+        return model.config.model_type in MODEL_CONFIG
     return False
 
 
@@ -43,7 +36,7 @@ def _import_required_replacements(model: torch.nn.Module) -> None:
     if not is_custom_model(model):
         return
     model_type = model.config.model_type
-    _ = BUILTIN_MODULES[model_type].__name__  # Trigger lazy import
+    _ = MODEL_CONFIG[model_type]["defuse_patch"].__name__  # Trigger lazy import
     logger.debug(f"Loaded replacement module for {model_type}")
 
 
