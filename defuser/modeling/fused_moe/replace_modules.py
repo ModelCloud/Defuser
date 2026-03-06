@@ -17,6 +17,7 @@ from logbar import LogBar
 from tqdm import tqdm
 
 from defuser.model_registry import MODEL_CONFIG, PATCH
+from defuser.utils.common import is_within_max_layers
 
 logger = LogBar(__name__)
 
@@ -238,6 +239,7 @@ def _handle_moe_modules(model: torch.nn.Module) -> list[str]:
 def apply_replacements(
         model: torch.nn.Module,
         auto_detect_moe: bool = True,
+        max_layers: int | None = None,
 ) -> torch.nn.Module:
     """
     Function to apply module replacements to a model.
@@ -251,6 +253,8 @@ def apply_replacements(
         model: The model to apply module replacement to (modified in-place).
         auto_detect_moe: If True, automatically detect and handle fused MOE modules
             (transformers 5.0+ pattern). Default is True.
+        max_layers: If provided, only replace modules under ``layers.<idx>``
+            where ``idx < max_layers``.
 
     Returns:
         The model with modules replaced.
@@ -261,7 +265,7 @@ def apply_replacements(
 
     # Custom replacements first
     if is_model_patchable(model):
-        _apply_custom_replacements(model)
+        _apply_custom_replacements(model, max_layers=max_layers)
     # if auto_detect_moe and is_transformers_version_greater_or_equal_5():
     #     _handle_moe_modules(model)
 
@@ -270,7 +274,10 @@ def apply_replacements(
     return model
 
 
-def _apply_custom_replacements(model: torch.nn.Module) -> list:
+def _apply_custom_replacements(
+        model: torch.nn.Module,
+        max_layers: int | None = None,
+) -> list:
     """Scan model and replace registered modules with custom implementations.
 
     Args:
@@ -287,6 +294,8 @@ def _apply_custom_replacements(model: torch.nn.Module) -> list:
     for name, module in model.named_modules():
         # skip replaced modules
         if isinstance(module, ReplacementModuleBase):
+            continue
+        if not is_within_max_layers(name, max_layers):
             continue
         class_name = module.__class__.__name__
         if ReplacementModuleBase.is_registered(class_name) and ReplacementModuleBase.get_replacement_class(

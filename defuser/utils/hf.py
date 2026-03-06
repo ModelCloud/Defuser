@@ -17,6 +17,7 @@ from packaging import version
 from transformers import AutoConfig
 
 from defuser.model_registry import MODEL_CONFIG, PATCH
+from defuser.utils.common import is_within_max_layers
 
 logger = LogBar(__name__)
 
@@ -106,7 +107,7 @@ def pre_check_config(model_name: str | torch.nn.Module):
     return True
 
 
-def patch(model: torch.nn.Module) -> bool:
+def patch(model: torch.nn.Module, max_layers: int | None = None) -> bool:
     res = pre_check_config(model)
     if not res:
         return False
@@ -124,6 +125,8 @@ def patch(model: torch.nn.Module) -> bool:
             names = []
             for n, m in model.named_modules():
                 if isinstance(m, orig_class):
+                    if not is_within_max_layers(n, max_layers):
+                        continue
                     names.append((n, next(m.parameters()).dtype))
             for (n, orig_dtype) in names:
                 model.set_submodule(n, custom_class(model.config).to(orig_dtype), True)
