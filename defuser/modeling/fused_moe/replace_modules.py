@@ -45,11 +45,12 @@ def _import_required_replacements(model: torch.nn.Module) -> None:
     logger.debug(f"Loaded replacement module for {model_type}: {module_path}")
 
 
-def materialize_model_(model: torch.nn.Module) -> None:
+def materialize_model(model: torch.nn.Module) -> None:
     def _materialize_module(module: torch.nn.Module) -> None:
         if isinstance(module, ReplacementModuleBase):
             module.materialize_weights()
 
+    # materialize all .children() and self
     model.apply(_materialize_module)
 
     # check if any module on meta device remains
@@ -58,10 +59,12 @@ def materialize_model_(model: torch.nn.Module) -> None:
         if param.device.type == "meta":
             logger.warning(f"Parameter {name} is still on meta device after materialization.")
             found_meta = True
+
     for name, buffer in model.named_buffers():
         if buffer.device.type == "meta":
             logger.warning(f"Buffer {name} is still on meta device after materialization.")
             found_meta = True
+
     if not found_meta:
         logger.debug("All parameters and buffers have been materialized from meta device.")
     release_original_module_(model)
