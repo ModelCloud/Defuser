@@ -4,7 +4,7 @@
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 import torch
 
-from defuser.modeling.fused_moe.replace_modules import materialize_model_
+from defuser.modeling.fused_moe.replace_modules import materialize_model
 from transformers import AutoModelForCausalLM, AutoModelForImageTextToText
 
 from defuser import convert_hf_model
@@ -45,7 +45,7 @@ def test_qwen3_5_moe():
     moe_block = model.model.language_model.layers[0].mlp
     assert isinstance(moe_block, LinearQwen3_5MoeSparseMoeBlock)
 
-    materialize_model_(model.model.language_model.layers[0])
+    materialize_model(model.model.language_model.layers[0])
 
     torch.testing.assert_close(moe_block.experts[0].gate_proj.weight, expected_gate)
     torch.testing.assert_close(moe_block.experts[0].up_proj.weight, expected_up)
