@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 
-import traceback
+# Adapted from intel/auto-round
+# at https://github.com/intel/auto-round/blob/main/auto_round/modeling/unfused_moe/__init__.py
 
 import torch
-from torch import nn
 
 from packaging import version
 
@@ -142,7 +142,6 @@ def apply_modeling_patch(model: torch.nn.Module) -> bool:
             logger.info(f"Patched module: {orig_path} -> {custom_path}")
             return True
         except Exception as e:
-            traceback.print_exc()
             logger.warning(f"Failed to patch {orig_path}: {e}")
             return False
     return False

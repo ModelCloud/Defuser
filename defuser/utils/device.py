@@ -2,6 +2,10 @@
 # SPDX-FileCopyrightText: 2026 qubitium@modelcloud.ai
 # SPDX-License-Identifier: Apache-2.0
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
+
+# Adapted from intel/auto-round
+# at https://github.com/intel/auto-round/blob/main/auto_round/utils/device.py
+
 import gc
 
 import torch

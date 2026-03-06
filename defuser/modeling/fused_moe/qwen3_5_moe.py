@@ -3,6 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 
+# Adapted from intel/auto-round
+# at https://github.com/intel/auto-round/blob/main/auto_round/modeling/fused_moe/qwen3_5_moe.py
+
 import torch
 from torch.nn import functional as F
 
