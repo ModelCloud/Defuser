@@ -21,7 +21,7 @@ from defuser.utils.common import (
 from defuser.utils.hf import MODEL_CONFIG
 
 
-def is_custom_model(model: torch.nn.Module) -> bool:
+def is_model_patchable(model: torch.nn.Module) -> bool:
     """Check if the model has a custom replacement registered via MODEL_CONFIG.
 
     Returns True if the model's model_type matches a key in MODEL_CONFIG.
@@ -33,7 +33,7 @@ def is_custom_model(model: torch.nn.Module) -> bool:
 
 def _import_required_replacements(model: torch.nn.Module) -> None:
     """Scan model and trigger lazy imports for registered replacement modules."""
-    if not is_custom_model(model):
+    if not is_model_patchable(model):
         return
     model_type = model.config.model_type
     _ = MODEL_CONFIG[model_type]["defuse_patch"].__name__  # Trigger lazy import
@@ -250,7 +250,7 @@ def apply_replacements(
     _log_first_moe_block(model, "before replacement")
 
     # Custom replacements first
-    if is_custom_model(model):
+    if is_model_patchable(model):
         _apply_custom_replacements(model)
     if auto_detect_moe and is_transformers_version_greater_or_equal_5():
         _handle_moe_modules(model)
