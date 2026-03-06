@@ -14,13 +14,18 @@ import torch
 from typing import Dict, Type
 from defuser.logger import logger
 from dataclasses import dataclass
+from typing import Dict, Type
 
+import torch
+from logbar import LogBar
 from tqdm import tqdm
 
 from defuser.utils.common import (
     is_transformers_version_greater_or_equal_5
 )
 from defuser.model_registry import MODEL_CONFIG, PATCH
+
+logger = LogBar(__name__)
 
 
 def is_model_patchable(model: torch.nn.Module) -> bool:
@@ -57,12 +62,12 @@ def materialize_model(model: torch.nn.Module) -> None:
     found_meta = False
     for name, param in model.named_parameters():
         if param.device.type == "meta":
-            logger.warning(f"Parameter {name} is still on meta device after materialization.")
+            logger.warn(f"Parameter {name} is still on meta device after materialization.")
             found_meta = True
 
     for name, buffer in model.named_buffers():
         if buffer.device.type == "meta":
-            logger.warning(f"Buffer {name} is still on meta device after materialization.")
+            logger.warn(f"Buffer {name} is still on meta device after materialization.")
             found_meta = True
 
     if not found_meta:
@@ -114,7 +119,7 @@ class ReplacementModuleBase(ABC, torch.nn.Module):
                 )
 
             cls._replacement_registry[cls.original_module_class()] = cls
-            logger.trace(f"Registered {cls.__name__} for replacing {cls.original_module_class()}")
+            logger.debug(f"Registered {cls.__name__} for replacing {cls.original_module_class()}")
 
     def __init__(self, original: torch.nn.Module):
         super().__init__()
@@ -223,7 +228,7 @@ def _handle_moe_modules(model: torch.nn.Module) -> list[str]:
     )
 
     if not is_linear_loop_available():
-        logger.warning(
+        logger.warn(
             "transformers' linear_loop experts interface not available (requires transformers 5.0+). "
             "MOE modules with @use_experts_implementation decorator will fall back to custom replacements "
             "if registered."
