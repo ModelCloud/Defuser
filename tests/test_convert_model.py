@@ -3,11 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 import torch
-
-from defuser.modeling.fused_moe.replace_modules import materialize_model
 from transformers import AutoModelForCausalLM, AutoModelForImageTextToText
 
 from defuser import convert_hf_model
+from defuser.modeling.fused_moe.replace_modules import materialize_model
 
 
 def test_qwen3_moe():

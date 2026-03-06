@@ -6,19 +6,16 @@
 # Adapted from intel/auto-round
 # at https://github.com/intel/auto-round/blob/main/auto_round/modeling/fused_moe/replace_modules.py
 
+import importlib
+import weakref
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-import importlib
 from typing import Dict, Type
-import weakref
 
 import torch
 from logbar import LogBar
 from tqdm import tqdm
 
-from defuser.utils.common import (
-    is_transformers_version_greater_or_equal_5
-)
 from defuser.model_registry import MODEL_CONFIG, PATCH
 
 logger = LogBar(__name__)

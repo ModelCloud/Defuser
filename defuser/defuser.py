@@ -5,8 +5,8 @@
 
 from torch import nn
 
-from defuser.utils.hf import patch
 from defuser.modeling.fused_moe.update_module import update_module
+from defuser.utils.hf import patch
 
 
 def convert_hf_model(model: nn.Module, cleanup_original: bool = False) -> nn.Module:
