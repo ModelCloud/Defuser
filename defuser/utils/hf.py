@@ -3,10 +3,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 
+# Adapted from intel/auto-round
+# at https://github.com/intel/auto-round/blob/main/auto_round/modeling/unfused_moe/__init__.py
+
 import torch
-from torch import nn
 
 from packaging import version
+
 from transformers import AutoConfig
 import transformers
 import os
@@ -14,19 +17,33 @@ import importlib
 
 from typing import Final
 
-from ..logger import logger
+from defuser.logger import logger
+from defuser.utils.common import (
+    LazyImport,
+)
 
 MODEL_CONFIG = {
     "qwen3_moe": {
         "min_transformers_version": "5.0.0",
-        "checkpoint_mapping": [],
-        "block_patch": [
+        # structure_patch only replaces modeling structure
+        "structure_patch": [
             (
                 "transformers.models.qwen3_moe.modeling_qwen3_moe.Qwen3MoeSparseMoeBlock",
                 "defuser.modeling.unfused_moe.qwen3_moe.LinearQwen3MoeSparseMoeBlock",
             )
         ],
     },
+    "qwen3_5_moe": {
+        "min_transformers_version": "5.2.0",
+        # defuse_patch include tensor defusing/materialization workflow
+        "defuse_patch": LazyImport("defuser.modeling.fused_moe.qwen3_5_moe"),
+    },
+    "qwen3_5_moe_text": {
+        "min_transformers_version": "5.2.0",
+        # defuse_patch include tensor defusing/materialization workflow
+        "defuse_patch": LazyImport("defuser.modeling.fused_moe.qwen3_5_moe"),
+    },
+
 }
 
 _ENV_VAR: Final[str] = "GPTQMODEL_USE_MODELSCOPE"
@@ -122,7 +139,7 @@ def apply_modeling_patch(model: torch.nn.Module) -> bool:
     model_type = getattr(model.config, "model_type")
     cfg = MODEL_CONFIG[model_type]
     # patch blocks
-    for orig_path, custom_path in cfg.get("block_patch", []):
+    for orig_path, custom_path in cfg.get("structure_patch", []):
         orig_module_path, orig_class_name = orig_path.rsplit(".", 1)
         custom_module_path, custom_class_name = custom_path.rsplit(".", 1)
         try:
@@ -144,6 +161,4 @@ def apply_modeling_patch(model: torch.nn.Module) -> bool:
     return False
 
 
-def convert_hf_model(model: nn.Module):
-    apply_modeling_patch(model)
 
