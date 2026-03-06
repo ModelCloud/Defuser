@@ -236,8 +236,8 @@ def _handle_moe_modules(model: torch.nn.Module) -> list[str]:
 
 
 def apply_replacements(
-    model: torch.nn.Module,
-    auto_detect_moe: bool = True,
+        model: torch.nn.Module,
+        auto_detect_moe: bool = True,
 ) -> torch.nn.Module:
     """
     Function to apply module replacements to a model.
@@ -290,7 +290,7 @@ def _apply_custom_replacements(model: torch.nn.Module) -> list:
             continue
         class_name = module.__class__.__name__
         if ReplacementModuleBase.is_registered(class_name) and ReplacementModuleBase.get_replacement_class(
-            class_name
+                class_name
         ).is_to_be_replaced(module):
             modules_to_replace.append((name, module, class_name))
 
@@ -368,10 +368,10 @@ class ModuleReplacementTracker:
         return cls._instance
 
     def register_replacement(
-        self,
-        name: str,
-        original_class: str,
-        replacement: ReplacementModuleBase,
+            self,
+            name: str,
+            original_class: str,
+            replacement: ReplacementModuleBase,
     ) -> None:
         """Register a module replacement."""
         replacement_id = id(replacement)

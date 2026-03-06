@@ -18,20 +18,20 @@ authors = [
     { name = "ModelCloud", email = "qubitium@modelcloud.ai" },
 ]
 classifiers = [
-  "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3.13",
-  "Programming Language :: Python :: 3.14",
-  "Programming Language :: C",
-  "Topic :: Software Development :: Libraries",
-  "Topic :: Text Processing :: Linguistic"
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: C",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Text Processing :: Linguistic"
 ]
 keywords = ["Defuser", "Model", "HF", "Transformers"]
 dependencies = [
-  "transformers",
+    "transformers",
 ]
 
 [project.urls]

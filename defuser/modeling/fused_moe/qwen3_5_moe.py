@@ -40,10 +40,10 @@ class LinearQwen3_5MoeSparseMoeBlock(ReplacementModuleBase):
         clear_memory()
 
     def experts_forward(
-        self,
-        hidden_states: torch.Tensor,
-        top_k_index: torch.Tensor,
-        top_k_weights: torch.Tensor,
+            self,
+            hidden_states: torch.Tensor,
+            top_k_index: torch.Tensor,
+            top_k_weights: torch.Tensor,
     ) -> torch.Tensor:
         final_hidden_states = torch.zeros_like(hidden_states)
         with torch.no_grad():
@@ -81,10 +81,10 @@ class LinearQwen3_5MoeSparseMoeBlock(ReplacementModuleBase):
 
     @classmethod
     def from_original(
-        cls,
-        original,
-        config,
-        **kwargs,
+            cls,
+            original,
+            config,
+            **kwargs,
     ):
         """Create an instance from the original module."""
         return cls(original, config)

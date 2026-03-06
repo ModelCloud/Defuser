@@ -49,4 +49,3 @@ def test_qwen3_5_moe():
     torch.testing.assert_close(moe_block.experts[0].gate_proj.weight, expected_gate)
     torch.testing.assert_close(moe_block.experts[0].up_proj.weight, expected_up)
     torch.testing.assert_close(moe_block.experts[0].down_proj.weight, expected_down)
-

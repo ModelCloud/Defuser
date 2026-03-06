@@ -10,7 +10,7 @@ from defuser.modeling.fused_moe.replace_modules import apply_replacements, relea
 
 
 def update_module(
-    model, cleanup_original: bool = True
+        model, cleanup_original: bool = True
 ):
     model = apply_replacements(model)
 
