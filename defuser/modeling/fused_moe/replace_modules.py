@@ -7,18 +7,19 @@
 # at https://github.com/intel/auto-round/blob/main/auto_round/modeling/fused_moe/replace_modules.py
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Dict, Type
 
 import torch
-from typing import Dict, Type
-from defuser.logger import logger
-from dataclasses import dataclass
-
+from logbar import LogBar
 from tqdm import tqdm
 
 from defuser.utils.common import (
     is_transformers_version_greater_or_equal_5
 )
 from defuser.utils.hf import MODEL_CONFIG
+
+logger = LogBar(__name__)
 
 
 def is_custom_model(model: torch.nn.Module) -> bool:
@@ -51,11 +52,11 @@ def materialize_model_(model: torch.nn.Module) -> None:
     found_meta = False
     for name, param in model.named_parameters():
         if param.device.type == "meta":
-            logger.warning(f"Parameter {name} is still on meta device after materialization.")
+            logger.warn(f"Parameter {name} is still on meta device after materialization.")
             found_meta = True
     for name, buffer in model.named_buffers():
         if buffer.device.type == "meta":
-            logger.warning(f"Buffer {name} is still on meta device after materialization.")
+            logger.warn(f"Buffer {name} is still on meta device after materialization.")
             found_meta = True
     if not found_meta:
         logger.debug("All parameters and buffers have been materialized from meta device.")
@@ -106,7 +107,7 @@ class ReplacementModuleBase(ABC, torch.nn.Module):
                 )
 
             cls._replacement_registry[cls.original_module_class()] = cls
-            logger.trace(f"Registered {cls.__name__} for replacing {cls.original_module_class()}")
+            logger.debug(f"Registered {cls.__name__} for replacing {cls.original_module_class()}")
 
     def __init__(self, original: torch.nn.Module):
         super().__init__()
@@ -211,7 +212,7 @@ def _handle_moe_modules(model: torch.nn.Module) -> list[str]:
     )
 
     if not is_linear_loop_available():
-        logger.warning(
+        logger.warn(
             "transformers' linear_loop experts interface not available (requires transformers 5.0+). "
             "MOE modules with @use_experts_implementation decorator will fall back to custom replacements "
             "if registered."
@@ -360,7 +361,7 @@ class ModuleReplacementTracker:
         """Register a module replacement."""
         self._replacement_to_original[id(replacement)] = original
         self._name_to_info[name] = ReplacedModuleInfo(original_module=original, replacement_module=replacement)
-        logger.trace(f"Registered replacement for module: {name}")
+        logger.debug(f"Registered replacement for module: {name}")
 
     def get_original(self, replacement: ReplacementModuleBase) -> torch.nn.Module:
         """Get the original module for a given replacement module."""
@@ -378,7 +379,7 @@ class ModuleReplacementTracker:
             # Delete the original module to free memory
             del original
             del self._replacement_to_original[replacement_id]
-            logger.trace(f"Released original module for replacement {replacement_id}")
+            logger.debug(f"Released original module for replacement {replacement_id}")
 
     def release_all_originals(self) -> None:
         """Release all tracked original modules."""

@@ -5,7 +5,6 @@ defaults:
     shell: bash -le {0}
 
 on:
-  push:
   repository_dispatch:
   workflow_dispatch:
     inputs:
@@ -149,6 +148,7 @@ jobs:
       - name: Install
         run: |
           pip install pip pytest regex setuptools build wheel -U
+          uv pip install -r requirements.txt
           pip install -v .
 
       - name: Test ${{ matrix.test_script }}

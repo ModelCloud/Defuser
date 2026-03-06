@@ -6,21 +6,21 @@
 # Adapted from intel/auto-round
 # at https://github.com/intel/auto-round/blob/main/auto_round/modeling/unfused_moe/__init__.py
 
-import torch
-
-from packaging import version
-
-from transformers import AutoConfig
-import transformers
-import os
 import importlib
-
+import os
 from typing import Final
 
-from defuser.logger import logger
+import torch
+import transformers
+from logbar import LogBar
+from packaging import version
+from transformers import AutoConfig
+
 from defuser.utils.common import (
     LazyImport,
 )
+
+logger = LogBar(__name__)
 
 MODEL_CONFIG = {
     "qwen3_moe": {
@@ -156,9 +156,8 @@ def apply_modeling_patch(model: torch.nn.Module) -> bool:
             logger.info(f"Patched module: {orig_path} -> {custom_path}")
             return True
         except Exception as e:
-            logger.warning(f"Failed to patch {orig_path}: {e}")
+            logger.warn(f"Failed to patch {orig_path}: {e}")
             return False
     return False
-
 
 
