@@ -264,8 +264,8 @@ def apply_replacements(
     # Custom replacements first
     if is_model_patchable(model):
         _apply_custom_replacements(model)
-    if auto_detect_moe and is_transformers_version_greater_or_equal_5():
-        _handle_moe_modules(model)
+    # if auto_detect_moe and is_transformers_version_greater_or_equal_5():
+    #     _handle_moe_modules(model)
 
     _log_first_moe_block(model, "after replacement")
 
