@@ -10,9 +10,9 @@ import torch
 
 
 def _update_parameter(
-    module: torch.nn.Module,
-    name: str,
-    data: torch.Tensor,
+        module: torch.nn.Module,
+        name: str,
+        data: torch.Tensor,
 ) -> None:
     old_param = getattr(module, name)
     new_param = torch.nn.Parameter(data, requires_grad=old_param.requires_grad)

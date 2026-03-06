@@ -29,7 +29,7 @@ import torch
 from logbar import LogBar
 from torch import nn
 
-from defuser.utils.device import clear_memory
+from defuser.utils.device import clear_memory, to_meta
 
 logger = LogBar(__name__)
 
@@ -66,6 +66,7 @@ KNOWN_PROJECTION_PATTERNS = {
     "w2_proj": {"is_input_proj": False, "output_multiplier": 1},
 }
 
+
 class _ExpertContainer(nn.Module):
     """Lightweight container for a single expert's projection layers.
 
@@ -78,16 +79,17 @@ class _ExpertContainer(nn.Module):
 
     pass
 
+
 def is_linear_loop_available() -> bool:
     """Check if linear_loop experts implementation is available."""
     return HAS_EXPERTS_INTERFACE
 
 
 def linear_loop_experts_forward(
-    self: nn.Module,
-    hidden_states: torch.Tensor,
-    top_k_index: torch.Tensor,
-    top_k_weights: torch.Tensor,
+        self: nn.Module,
+        hidden_states: torch.Tensor,
+        top_k_index: torch.Tensor,
+        top_k_weights: torch.Tensor,
 ) -> torch.Tensor:
     """Forward using individual nn.Linear layers per expert.
 
@@ -279,12 +281,12 @@ def _infer_dimensions(param: nn.Parameter, config: dict, is_transposed: bool) ->
 
 
 def _unfuse_single_projection(
-    module: nn.Module,
-    proj_name: str,
-    num_experts: int,
-    is_transposed: bool,
-    dtype: torch.dtype,
-    target_device: torch.device,
+        module: nn.Module,
+        proj_name: str,
+        num_experts: int,
+        is_transposed: bool,
+        dtype: torch.dtype,
+        target_device: torch.device,
 ) -> list | None:
     """Unfuse a single projection from 3D Parameter to a list of Linear layers.
 
@@ -362,10 +364,10 @@ def _unfuse_single_projection(
     # Release original parameter memory
     if not is_meta:
         try:
-            param.data = param.data.to_empty(device="meta")
+            setattr(module, proj_name, to_meta(param))
             if has_bias:
-                bias_param.data = bias_param.data.to_empty(device="meta")
-            logger.debug(f"Released memory for {proj_name} using to_empty(device='meta')")
+                setattr(module, bias_name, to_meta(bias_param))
+            logger.debug(f"Released memory for {proj_name} using to_meta()")
         except Exception:
             pass
 
@@ -457,9 +459,9 @@ def _install_compact_expert_repr(module: nn.Module) -> None:
 
 
 def _unfuse_experts_weights_inplace(
-    module: nn.Module,
-    check_decorator: bool = True,
-    projection_names: list[str] | None = None,
+        module: nn.Module,
+        check_decorator: bool = True,
+        projection_names: list[str] | None = None,
 ) -> bool:
     """Convert fused 3D expert weights to per-expert containers of nn.Linear layers.
 

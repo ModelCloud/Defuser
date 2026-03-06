@@ -10,9 +10,11 @@ from defuser.modeling.fused_moe.replace_modules import apply_replacements, relea
 
 
 def update_module(
-    model, cleanup_original: bool = True
+    model,
+    cleanup_original: bool = True,
+    max_layers: int | None = None,
 ):
-    model = apply_replacements(model)
+    model = apply_replacements(model, max_layers=max_layers)
 
     if cleanup_original:
         release_original_module_(model)

@@ -6,6 +6,8 @@
 # Adapted from intel/auto-round
 # at https://github.com/intel/auto-round/blob/main/auto_round/modeling/fused_moe/replace_modules.py
 
+import importlib
+import weakref
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, Type
@@ -14,15 +16,13 @@ import torch
 from logbar import LogBar
 from tqdm import tqdm
 
-from defuser.utils.common import (
-    is_transformers_version_greater_or_equal_5
-)
-from defuser.utils.hf import MODEL_CONFIG
+from defuser.model_registry import MODEL_CONFIG, PATCH
+from defuser.utils.common import is_within_max_layers
 
 logger = LogBar(__name__)
 
 
-def is_custom_model(model: torch.nn.Module) -> bool:
+def is_model_patchable(model: torch.nn.Module) -> bool:
     """Check if the model has a custom replacement registered via MODEL_CONFIG.
 
     Returns True if the model's model_type matches a key in MODEL_CONFIG.
@@ -33,19 +33,23 @@ def is_custom_model(model: torch.nn.Module) -> bool:
 
 
 def _import_required_replacements(model: torch.nn.Module) -> None:
-    """Scan model and trigger lazy imports for registered replacement modules."""
-    if not is_custom_model(model):
+    """Import replacement modules required for the model's defuse workflow."""
+    if not is_model_patchable(model):
         return
     model_type = model.config.model_type
-    _ = MODEL_CONFIG[model_type]["defuse_patch"].__name__  # Trigger lazy import
-    logger.debug(f"Loaded replacement module for {model_type}")
+    module_path = MODEL_CONFIG[model_type].get(PATCH.DEFUSE)
+    if not module_path:
+        return
+    importlib.import_module(module_path)
+    logger.debug(f"Loaded replacement module for {model_type}: {module_path}")
 
 
-def materialize_model_(model: torch.nn.Module) -> None:
+def materialize_model(model: torch.nn.Module) -> None:
     def _materialize_module(module: torch.nn.Module) -> None:
         if isinstance(module, ReplacementModuleBase):
             module.materialize_weights()
 
+    # materialize all .children() and self
     model.apply(_materialize_module)
 
     # check if any module on meta device remains
@@ -54,10 +58,12 @@ def materialize_model_(model: torch.nn.Module) -> None:
         if param.device.type == "meta":
             logger.warn(f"Parameter {name} is still on meta device after materialization.")
             found_meta = True
+
     for name, buffer in model.named_buffers():
         if buffer.device.type == "meta":
             logger.warn(f"Buffer {name} is still on meta device after materialization.")
             found_meta = True
+
     if not found_meta:
         logger.debug("All parameters and buffers have been materialized from meta device.")
     release_original_module_(model)
@@ -111,9 +117,11 @@ class ReplacementModuleBase(ABC, torch.nn.Module):
 
     def __init__(self, original: torch.nn.Module):
         super().__init__()
+        self._original_module = original
+        self._tracker_name = str(id(self))
         _global_tracker.register_replacement(
-            name=str(id(self)),
-            original=original,
+            name=self._tracker_name,
+            original_class=original.__class__.__name__,
             replacement=self,
         )
         self._materialized = False
@@ -176,12 +184,14 @@ class ReplacementModuleBase(ABC, torch.nn.Module):
 
     def release_original_module(self) -> None:
         """Release reference to the original module to free memory."""
-        # Release from global tracker
+        self._original_module = None
         _global_tracker.release_original(self)
 
     def _get_original_module(self) -> torch.nn.Module:
         """Get the original module associated with this replacement."""
-        return _global_tracker.get_original(self)
+        if self._original_module is None:
+            raise RuntimeError("Original module has already been released.")
+        return self._original_module
 
     def post_process_materialization(self) -> None:
         """Mark the replacement module as materialized."""
@@ -227,8 +237,9 @@ def _handle_moe_modules(model: torch.nn.Module) -> list[str]:
 
 
 def apply_replacements(
-    model: torch.nn.Module,
-    auto_detect_moe: bool = True,
+        model: torch.nn.Module,
+        auto_detect_moe: bool = True,
+        max_layers: int | None = None,
 ) -> torch.nn.Module:
     """
     Function to apply module replacements to a model.
@@ -242,6 +253,8 @@ def apply_replacements(
         model: The model to apply module replacement to (modified in-place).
         auto_detect_moe: If True, automatically detect and handle fused MOE modules
             (transformers 5.0+ pattern). Default is True.
+        max_layers: If provided, only replace modules under ``layers.<idx>``
+            where ``idx < max_layers``.
 
     Returns:
         The model with modules replaced.
@@ -251,17 +264,20 @@ def apply_replacements(
     _log_first_moe_block(model, "before replacement")
 
     # Custom replacements first
-    if is_custom_model(model):
-        _apply_custom_replacements(model)
-    if auto_detect_moe and is_transformers_version_greater_or_equal_5():
-        _handle_moe_modules(model)
+    if is_model_patchable(model):
+        _apply_custom_replacements(model, max_layers=max_layers)
+    # if auto_detect_moe and is_transformers_version_greater_or_equal_5():
+    #     _handle_moe_modules(model)
 
     _log_first_moe_block(model, "after replacement")
 
     return model
 
 
-def _apply_custom_replacements(model: torch.nn.Module) -> list:
+def _apply_custom_replacements(
+        model: torch.nn.Module,
+        max_layers: int | None = None,
+) -> list:
     """Scan model and replace registered modules with custom implementations.
 
     Args:
@@ -279,9 +295,11 @@ def _apply_custom_replacements(model: torch.nn.Module) -> list:
         # skip replaced modules
         if isinstance(module, ReplacementModuleBase):
             continue
+        if not is_within_max_layers(name, max_layers):
+            continue
         class_name = module.__class__.__name__
         if ReplacementModuleBase.is_registered(class_name) and ReplacementModuleBase.get_replacement_class(
-            class_name
+                class_name
         ).is_to_be_replaced(module):
             modules_to_replace.append((name, module, class_name))
 
@@ -320,12 +338,13 @@ def _apply_custom_replacements(model: torch.nn.Module) -> list:
 
 @dataclass
 class ReplacedModuleInfo:
-    original_module: torch.nn.Module
-    replacement_module: ReplacementModuleBase
+    original_module_class: str
+    replacement_module_class: str
+    replacement_module_ref: "weakref.ReferenceType[ReplacementModuleBase]"
 
 
 class ModuleReplacementTracker:
-    """Tracker to maintain mapping between replacement modules and their original modules.
+    """Tracker to maintain metadata for replacement modules.
 
     This is a singleton class - only one instance can exist.
     """
@@ -343,8 +362,8 @@ class ModuleReplacementTracker:
         if ModuleReplacementTracker._initialized:
             return
 
-        # Map from replacement module id to original module
-        self._replacement_to_original: Dict[int, torch.nn.Module] = {}
+        # Map from replacement module id to tracker name
+        self._replacement_to_name: Dict[int, str] = {}
         # Map from module name to ReplacedModuleInfo
         self._name_to_info: Dict[str, ReplacedModuleInfo] = {}
 
@@ -357,40 +376,65 @@ class ModuleReplacementTracker:
             cls._instance = cls()
         return cls._instance
 
-    def register_replacement(self, name: str, original: torch.nn.Module, replacement: ReplacementModuleBase) -> None:
+    def register_replacement(
+            self,
+            name: str,
+            original_class: str,
+            replacement: ReplacementModuleBase,
+    ) -> None:
         """Register a module replacement."""
-        self._replacement_to_original[id(replacement)] = original
-        self._name_to_info[name] = ReplacedModuleInfo(original_module=original, replacement_module=replacement)
+        replacement_id = id(replacement)
+        self._replacement_to_name[replacement_id] = name
+        self._name_to_info[name] = ReplacedModuleInfo(
+            original_module_class=original_class,
+            replacement_module_class=replacement.__class__.__name__,
+            replacement_module_ref=weakref.ref(replacement),
+        )
         logger.debug(f"Registered replacement for module: {name}")
 
-    def get_original(self, replacement: ReplacementModuleBase) -> torch.nn.Module:
+    def get_original(self, replacement: ReplacementModuleBase) -> torch.nn.Module | None:
         """Get the original module for a given replacement module."""
-        return self._replacement_to_original.get(id(replacement))
+        return replacement._original_module
 
-    def get_info_by_name(self, name: str) -> ReplacedModuleInfo:
+    def get_info_by_name(self, name: str) -> ReplacedModuleInfo | None:
         """Get replacement info by module name."""
-        return self._name_to_info.get(name)
+        info = self._name_to_info.get(name)
+        if info is None:
+            return None
+        if info.replacement_module_ref() is None:
+            del self._name_to_info[name]
+            return None
+        return info
 
     def release_original(self, replacement: ReplacementModuleBase) -> None:
         """Release the original module associated with a replacement module."""
         replacement_id = id(replacement)
-        if replacement_id in self._replacement_to_original:
-            original = self._replacement_to_original[replacement_id]
-            # Delete the original module to free memory
-            del original
-            del self._replacement_to_original[replacement_id]
+        name = self._replacement_to_name.pop(replacement_id, None)
+        if name is not None:
+            info = self._name_to_info.get(name)
+            if info is not None:
+                replacement_ref = info.replacement_module_ref()
+                if replacement_ref is None or replacement_ref is replacement:
+                    del self._name_to_info[name]
             logger.debug(f"Released original module for replacement {replacement_id}")
 
     def release_all_originals(self) -> None:
         """Release all tracked original modules."""
-        count = len(self._replacement_to_original)
+        count = 0
+        for info in self._name_to_info.values():
+            replacement = info.replacement_module_ref()
+            if replacement is not None and replacement._original_module is not None:
+                replacement._original_module = None
+                count += 1
+
+        self._replacement_to_name.clear()
+        self._name_to_info.clear()
         if count > 0:
-            self._replacement_to_original.clear()
             logger.debug(f"Released {count} original modules from tracker")
 
     def clear(self) -> None:
         """Clear all tracked information."""
-        self._replacement_to_original.clear()
+        self._replacement_to_name.clear()
         self._name_to_info.clear()
         logger.debug("Cleared module replacement tracker")
 

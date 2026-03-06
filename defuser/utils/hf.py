@@ -16,38 +16,12 @@ from logbar import LogBar
 from packaging import version
 from transformers import AutoConfig
 
-from defuser.utils.common import (
-    LazyImport,
-)
+from defuser.model_registry import MODEL_CONFIG, PATCH
+from defuser.utils.common import is_within_max_layers
 
 logger = LogBar(__name__)
 
-MODEL_CONFIG = {
-    "qwen3_moe": {
-        "min_transformers_version": "5.0.0",
-        # structure_patch only replaces modeling structure
-        "structure_patch": [
-            (
-                "transformers.models.qwen3_moe.modeling_qwen3_moe.Qwen3MoeSparseMoeBlock",
-                "defuser.modeling.unfused_moe.qwen3_moe.LinearQwen3MoeSparseMoeBlock",
-            )
-        ],
-    },
-    "qwen3_5_moe": {
-        "min_transformers_version": "5.2.0",
-        # defuse_patch include tensor defusing/materialization workflow
-        "defuse_patch": LazyImport("defuser.modeling.fused_moe.qwen3_5_moe"),
-    },
-    "qwen3_5_moe_text": {
-        "min_transformers_version": "5.2.0",
-        # defuse_patch include tensor defusing/materialization workflow
-        "defuse_patch": LazyImport("defuser.modeling.fused_moe.qwen3_5_moe"),
-    },
-
-}
-
 _ENV_VAR: Final[str] = "GPTQMODEL_USE_MODELSCOPE"
-
 
 TRUTHFUL = {"1", "true", "yes", "on", "y"}
 
@@ -63,6 +37,7 @@ def env_flag(name: str, default: str | bool | None = "0") -> bool:
             return default
         value = default
     return str(value).strip().lower() in TRUTHFUL
+
 
 def modelscope_requested() -> bool:
     """
@@ -132,14 +107,14 @@ def pre_check_config(model_name: str | torch.nn.Module):
     return True
 
 
-def apply_modeling_patch(model: torch.nn.Module) -> bool:
+def patch(model: torch.nn.Module, max_layers: int | None = None) -> bool:
     res = pre_check_config(model)
     if not res:
         return False
     model_type = getattr(model.config, "model_type")
     cfg = MODEL_CONFIG[model_type]
     # patch blocks
-    for orig_path, custom_path in cfg.get("structure_patch", []):
+    for orig_path, custom_path in cfg.get(PATCH.REPLACE_MODULE, []):
         orig_module_path, orig_class_name = orig_path.rsplit(".", 1)
         custom_module_path, custom_class_name = custom_path.rsplit(".", 1)
         try:
@@ -150,6 +125,8 @@ def apply_modeling_patch(model: torch.nn.Module) -> bool:
             names = []
             for n, m in model.named_modules():
                 if isinstance(m, orig_class):
+                    if not is_within_max_layers(n, max_layers):
+                        continue
                     names.append((n, next(m.parameters()).dtype))
             for (n, orig_dtype) in names:
                 model.set_submodule(n, custom_class(model.config).to(orig_dtype), True)
@@ -159,5 +136,3 @@ def apply_modeling_patch(model: torch.nn.Module) -> bool:
             logger.warn(f"Failed to patch {orig_path}: {e}")
             return False
     return False
-
-

@@ -5,14 +5,21 @@
 
 from torch import nn
 
-from defuser.utils.hf import apply_modeling_patch
 from defuser.modeling.fused_moe.update_module import update_module
+from defuser.utils.hf import patch
 
 
-def convert_hf_model(model: nn.Module, cleanup_original: bool):
+def convert_hf_model(
+    model: nn.Module,
+    cleanup_original: bool = False,
+    max_layers: int | None = None,
+) -> nn.Module:
+    if max_layers is not None and max_layers < 1:
+        raise ValueError("max_layers must be >= 1 when provided")
+
     # Patch modeling structure for legacy Qwen3 MoE
     #
-    # There are two slightly different checkpoint formats we need to support:
+    # There are two slightlyfis_within_max_layers different checkpoint formats we need to support:
     #   1) Qwen3 MoE
     #   2) Qwen3.5 MoE
     #
@@ -41,7 +48,7 @@ def convert_hf_model(model: nn.Module, cleanup_original: bool):
     #
     # If this patch succeeds, it means the model is in the Qwen3 MoE format and
     # no further tensor transformation is required.
-    is_applied = apply_modeling_patch(model)
+    is_applied = patch(model, max_layers=max_layers)
     if not is_applied:
         # -----------------------------------------------------------------------
         # Step 2: Handle Qwen3.5 MoE checkpoints
@@ -82,6 +89,12 @@ def convert_hf_model(model: nn.Module, cleanup_original: bool):
         #
         # This ensures compatibility between the Qwen3.5 fused checkpoint format
         # and the runtime model implementation that operates on defused weights.
-        model = update_module(model, cleanup_original=cleanup_original)
+        model = update_module(
+            model,
+            cleanup_original=cleanup_original,
+            max_layers=max_layers,
+        )
+    return model
+
 
 __all__ = ["convert_hf_model"]

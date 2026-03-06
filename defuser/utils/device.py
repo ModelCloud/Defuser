@@ -10,9 +10,30 @@ import gc
 
 import torch
 
+
+def to_meta(
+        obj: torch.nn.Module | torch.nn.Parameter | torch.Tensor,
+) -> torch.nn.Module | torch.nn.Parameter | torch.Tensor:
+    """Move module/parameter/tensor storage to meta without copying values."""
+    if isinstance(obj, torch.nn.Module):
+        obj.to_empty(device="meta")
+        return obj
+
+    if isinstance(obj, torch.nn.Parameter):
+        return torch.nn.Parameter(
+            torch.empty_like(obj.data, device="meta"),
+            requires_grad=obj.requires_grad,
+        )
+
+    if isinstance(obj, torch.Tensor):
+        return torch.empty_like(obj, device="meta")
+
+    raise TypeError(f"Unsupported type for to_meta: {type(obj)!r}")
+
+
 def clear_memory(
-    tensor: torch.Tensor | list[torch.Tensor] | None = None,
-    device_list: tuple | list | str | torch.device | None = None,
+        tensor: torch.Tensor | list[torch.Tensor] | None = None,
+        device_list: tuple | list | str | torch.device | None = None,
 ):
     # ------------------------
     # Clear CPU-side references
@@ -63,6 +84,7 @@ def clear_memory(
     if hasattr(torch, "xpu") and torch.xpu.is_available():
         torch.xpu.synchronize()
         torch.xpu.empty_cache()
+
 
 def unsupported_meta_device(model):
     """Checks if the model is a valid model.
