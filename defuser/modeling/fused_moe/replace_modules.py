@@ -388,7 +388,7 @@ class ModuleReplacementTracker:
             replacement_module_class=replacement.__class__.__name__,
             replacement_module_ref=weakref.ref(replacement),
         )
-        logger.trace(f"Registered replacement for module: {name}")
+        logger.debug(f"Registered replacement for module: {name}")
 
     def get_original(self, replacement: ReplacementModuleBase) -> torch.nn.Module | None:
         """Get the original module for a given replacement module."""
@@ -414,7 +414,7 @@ class ModuleReplacementTracker:
                 replacement_ref = info.replacement_module_ref()
                 if replacement_ref is None or replacement_ref is replacement:
                     del self._name_to_info[name]
-            logger.trace(f"Released original module for replacement {replacement_id}")
+            logger.debug(f"Released original module for replacement {replacement_id}")
 
     def release_all_originals(self) -> None:
         """Release all tracked original modules."""
