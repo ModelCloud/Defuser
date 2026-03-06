@@ -2,7 +2,10 @@
 # SPDX-FileCopyrightText: 2026 qubitium@modelcloud.ai
 # SPDX-License-Identifier: Apache-2.0
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
-from transformers import AutoModelForCausalLM
+import torch
+
+from defuser.modeling.fused_moe.replace_modules import materialize_model_
+from transformers import AutoModelForCausalLM, AutoModelForImageTextToText
 
 from defuser import convert_hf_model
 
@@ -17,3 +20,34 @@ def test_qwen3_moe():
     converted = convert_hf_model(model)
     assert converted
     assert isinstance(model.model.layers[0].mlp, LinearQwen3MoeSparseMoeBlock)
+
+
+def test_qwen3_5_moe():
+    from defuser.modeling.fused_moe.qwen3_5_moe import LinearQwen3_5MoeSparseMoeBlock
+    from transformers.models.qwen3_5_moe.modeling_qwen3_5_moe import Qwen3_5MoeSparseMoeBlock
+
+    model = AutoModelForImageTextToText.from_pretrained("/monster/data/model/Qwen3.5-35B-A3B")
+    assert model.config.model_type == "qwen3_5_moe"
+
+    original_moe_block = model.model.language_model.layers[0].mlp
+    assert isinstance(original_moe_block, Qwen3_5MoeSparseMoeBlock)
+
+    hidden_dim = original_moe_block.experts.gate_up_proj.shape[-1]
+    intermediate_dim = original_moe_block.experts.gate_up_proj.shape[1] // 2
+
+    expected_gate = original_moe_block.experts.gate_up_proj[0, :intermediate_dim, :hidden_dim].contiguous().clone()
+    expected_up = original_moe_block.experts.gate_up_proj[0, intermediate_dim:, :hidden_dim].contiguous().clone()
+    expected_down = original_moe_block.experts.down_proj[0, :hidden_dim, :intermediate_dim].contiguous().clone()
+
+    converted = convert_hf_model(model, cleanup_original=False)
+    assert converted
+
+    moe_block = model.model.language_model.layers[0].mlp
+    assert isinstance(moe_block, LinearQwen3_5MoeSparseMoeBlock)
+
+    materialize_model_(model.model.language_model.layers[0])
+
+    torch.testing.assert_close(moe_block.experts[0].gate_proj.weight, expected_gate)
+    torch.testing.assert_close(moe_block.experts[0].up_proj.weight, expected_up)
+    torch.testing.assert_close(moe_block.experts[0].down_proj.weight, expected_down)
+
