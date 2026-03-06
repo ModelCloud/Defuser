@@ -26,10 +26,12 @@ Usage:
 """
 
 import torch
+from logbar import LogBar
 from torch import nn
-from defuser.logger import logger
 
 from defuser.utils.device import clear_memory
+
+logger = LogBar(__name__)
 
 try:
     from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
@@ -189,7 +191,7 @@ def register_linear_loop_experts() -> bool:
         True if registration was successful, False otherwise.
     """
     if not HAS_EXPERTS_INTERFACE:
-        logger.warning(
+        logger.warn(
             "transformers.integrations.moe.ALL_EXPERTS_FUNCTIONS not available. "
             "linear_loop experts implementation not registered. "
             "Requires transformers >= 5.0.0"
