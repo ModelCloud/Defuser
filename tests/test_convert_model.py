@@ -6,7 +6,7 @@ import torch
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForImageTextToText
 
 from defuser import convert_hf_model
-from defuser.modeling.fused_moe.replace_modules import materialize_model
+from defuser.modeling.replace_modules import materialize_model
 
 
 def test_qwen3_moe():

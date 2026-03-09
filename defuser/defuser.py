@@ -5,9 +5,28 @@
 
 from torch import nn
 
-from defuser.model_registry import MODEL_CONFIG, CONVERSION_BEHAVIOR
-from defuser.modeling.fused_moe.update_module import update_module
-from defuser.utils.hf import patch
+from defuser.model_registry import MODEL_CONFIG
+from defuser.modeling.update_module import update_module
+from packaging import version
+import transformers
+
+
+def check_model_compatibility(model: nn.Module) -> str:
+    """Validate model type and transformers version compatibility."""
+    config = getattr(model, "config", None)
+    model_type = getattr(config, "model_type", None)
+    if model_type not in MODEL_CONFIG:
+        raise ValueError(f"Unsupported model_type: {model_type}")
+
+    min_ver = MODEL_CONFIG[model_type].get("min_transformers_version")
+    current_ver = version.parse(transformers.__version__)
+    if min_ver and current_ver < version.parse(min_ver):
+        raise RuntimeError(
+            f"transformers>={min_ver} is required for model_type={model_type}, "
+            f"but found {transformers.__version__}"
+        )
+
+    return model_type
 
 
 def convert_hf_model(
@@ -90,25 +109,12 @@ def convert_hf_model(
     # This ensures compatibility between the Qwen3.5 fused checkpoint format
     # and the runtime model implementation that operates on defused weights.
 
-    model_type = getattr(getattr(model, "config", None), "model_type", None)
-    if model_type not in MODEL_CONFIG:
-        raise ValueError(f"Unsupported model_type: {model_type}")
+    check_model_compatibility(model)
 
-    behavior = MODEL_CONFIG[model_type]["behavior"]
-
-    if behavior == CONVERSION_BEHAVIOR.REPLACE_ONLY:
-        if not patch(model, max_layers=max_layers):
-            raise RuntimeError(f"Failed to replace modules for {model_type}")
-        return model
-    
-    if behavior == CONVERSION_BEHAVIOR.REPLACE_AND_DEFUSE:
-        return update_module(
-            model,
-            cleanup_original=cleanup_original,
-            max_layers=max_layers,
-        )
-
-    raise ValueError(f"Unknown conversion behavior for {model_type}: {behavior}")
-
+    return update_module(
+        model,
+        cleanup_original=cleanup_original,
+        max_layers=max_layers,
+    )
 
 __all__ = ["convert_hf_model"]

@@ -16,7 +16,6 @@ import torch
 from logbar import LogBar
 from tqdm import tqdm
 
-from defuser.model_registry import MODEL_CONFIG, PATCH
 from defuser.utils.common import is_within_max_layers, is_transformers_version_greater_or_equal_5
 
 logger = LogBar(__name__)
@@ -194,7 +193,7 @@ def _handle_moe_modules(model: torch.nn.Module) -> list[str]:
     Returns:
         List of module names that were processed
     """
-    from defuser.modeling.fused_moe.moe_experts_interface import (
+    from defuser.modeling.moe_experts_interface import (
         is_linear_loop_available,
         prepare_model_for_moe_quantization,
     )

@@ -9,7 +9,7 @@ import weakref
 import pytest
 import torch
 
-from defuser.modeling.fused_moe.replace_modules import (
+from defuser.modeling.replace_modules import (
     ModuleReplacementTracker,
     ReplacementModuleBase,
     release_original_module_,
