@@ -28,7 +28,6 @@ def test_qwen3_moe():
 
 
 def test_qwen3_5_moe():
-    from defuser.modeling.fused_moe.qwen3_5_moe import LinearQwen3_5MoeSparseMoeBlock
     from transformers.models.qwen3_5_moe.modeling_qwen3_5_moe import Qwen3_5MoeSparseMoeBlock
 
     config = AutoConfig.from_pretrained("/monster/data/model/Qwen3.5-35B-A3B")
@@ -54,10 +53,16 @@ def test_qwen3_5_moe():
     assert converted
 
     moe_block = model.model.language_model.layers[0].mlp
-    assert isinstance(moe_block, LinearQwen3_5MoeSparseMoeBlock)
+    experts = moe_block.experts
+
+    assert hasattr(experts, "0")
+    expert0 = getattr(experts, "0")
+    assert hasattr(expert0, "gate_proj")
+    assert hasattr(expert0, "up_proj")
+    assert hasattr(expert0, "down_proj")
 
     materialize_model(model.model.language_model.layers[0])
 
-    torch.testing.assert_close(moe_block.experts[0].gate_proj.weight, expected_gate)
-    torch.testing.assert_close(moe_block.experts[0].up_proj.weight, expected_up)
-    torch.testing.assert_close(moe_block.experts[0].down_proj.weight, expected_down)
+    torch.testing.assert_close(expert0.gate_proj.weight, expected_gate)
+    torch.testing.assert_close(expert0.up_proj.weight, expected_up)
+    torch.testing.assert_close(expert0.down_proj.weight, expected_down)

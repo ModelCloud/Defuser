@@ -17,31 +17,9 @@ from logbar import LogBar
 from tqdm import tqdm
 
 from defuser.model_registry import MODEL_CONFIG, PATCH
-from defuser.utils.common import is_within_max_layers
+from defuser.utils.common import is_within_max_layers, is_transformers_version_greater_or_equal_5
 
 logger = LogBar(__name__)
-
-
-def is_model_patchable(model: torch.nn.Module) -> bool:
-    """Check if the model has a custom replacement registered via MODEL_CONFIG.
-
-    Returns True if the model's model_type matches a key in MODEL_CONFIG.
-    """
-    if hasattr(model, "config") and hasattr(model.config, "model_type"):
-        return model.config.model_type in MODEL_CONFIG
-    return False
-
-
-def _import_required_replacements(model: torch.nn.Module) -> None:
-    """Import replacement modules required for the model's defuse workflow."""
-    if not is_model_patchable(model):
-        return
-    model_type = model.config.model_type
-    module_path = MODEL_CONFIG[model_type].get(PATCH.DEFUSE)
-    if not module_path:
-        return
-    importlib.import_module(module_path)
-    logger.debug(f"Loaded replacement module for {model_type}: {module_path}")
 
 
 def materialize_model(model: torch.nn.Module) -> None:
@@ -259,15 +237,10 @@ def apply_replacements(
     Returns:
         The model with modules replaced.
     """
-    _import_required_replacements(model)
-
     _log_first_moe_block(model, "before replacement")
 
-    # Custom replacements first
-    if is_model_patchable(model):
-        _apply_custom_replacements(model, max_layers=max_layers)
-    # if auto_detect_moe and is_transformers_version_greater_or_equal_5():
-    #     _handle_moe_modules(model)
+    if auto_detect_moe and is_transformers_version_greater_or_equal_5():
+        _handle_moe_modules(model)
 
     _log_first_moe_block(model, "after replacement")
 
