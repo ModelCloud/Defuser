@@ -3,11 +3,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 
-def convert_hf_model(*args, **kwargs):
+def convert_model(*args, **kwargs):
     """Lazily import conversion entrypoint to avoid import-time cycles."""
-    from .defuser import convert_hf_model as _convert_hf_model
+    from .defuser import convert_model as _convert_model
 
-    return _convert_hf_model(*args, **kwargs)
+    return _convert_model(*args, **kwargs)
 
 
-__all__ = ["convert_hf_model"]
+__all__ = ["convert_model"]
