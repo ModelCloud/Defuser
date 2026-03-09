@@ -5,7 +5,7 @@
 import torch
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForImageTextToText
 
-from defuser import convert_hf_model
+from defuser import convert_model
 from defuser.modeling.replace_modules import materialize_model
 
 
@@ -21,7 +21,7 @@ def test_qwen3_moe():
 
     assert model.config.model_type == "qwen3_moe"
 
-    converted = convert_hf_model(model, max_layers=1)
+    converted = convert_model(model, max_layers=1)
     assert converted
 
     experts = model.model.layers[0].mlp.experts
@@ -54,7 +54,7 @@ def test_qwen3_5_moe():
     expected_up = original_moe_block.experts.gate_up_proj[0, intermediate_dim:, :hidden_dim].contiguous().clone()
     expected_down = original_moe_block.experts.down_proj[0, :hidden_dim, :intermediate_dim].contiguous().clone()
 
-    converted = convert_hf_model(model, cleanup_original=False, max_layers=1)
+    converted = convert_model(model, cleanup_original=False, max_layers=1)
     assert converted
 
     moe_block = model.model.language_model.layers[0].mlp

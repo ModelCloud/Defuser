@@ -9,9 +9,11 @@ from defuser.model_registry import MODEL_CONFIG
 from defuser.modeling.update_module import update_module
 from packaging import version
 import transformers
+from logbar import LogBar
 
+logger = LogBar(__name__)
 
-def check_model_compatibility(model: nn.Module) -> str:
+def check_model_compatibility(model: nn.Module) -> bool:
     """Validate model type and transformers version compatibility."""
     config = getattr(model, "config", None)
     model_type = getattr(config, "model_type", None)
@@ -21,15 +23,16 @@ def check_model_compatibility(model: nn.Module) -> str:
     min_ver = MODEL_CONFIG[model_type].get("min_transformers_version")
     current_ver = version.parse(transformers.__version__)
     if min_ver and current_ver < version.parse(min_ver):
-        raise RuntimeError(
-            f"transformers>={min_ver} is required for model_type={model_type}, "
-            f"but found {transformers.__version__}"
+        logger.warn(
+            f"Skip conversion for model_type={model_type}: "
+            f"requires transformers>={min_ver}, current version is {transformers.__version__}."
         )
+        return False
 
-    return model_type
+    return True
 
 
-def convert_hf_model(
+def convert_model(
         model: nn.Module,
         cleanup_original: bool = False,
         max_layers: int | None = None,
