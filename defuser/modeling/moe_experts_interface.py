@@ -56,14 +56,6 @@ KNOWN_PROJECTION_PATTERNS = {
     "gate_proj": {"is_input_proj": True, "output_multiplier": 1},  # hidden -> intermediate (gate)
     "up_proj": {"is_input_proj": True, "output_multiplier": 1},  # hidden -> intermediate (up)
     "down_proj": {"is_input_proj": False, "output_multiplier": 1},  # intermediate -> hidden
-    # Mixtral-style
-    "w1": {"is_input_proj": True, "output_multiplier": 1},  # gate: hidden -> intermediate
-    "w2": {"is_input_proj": False, "output_multiplier": 1},  # down: intermediate -> hidden
-    "w3": {"is_input_proj": True, "output_multiplier": 1},  # up: hidden -> intermediate
-    # DBRX-style
-    "v1": {"is_input_proj": True, "output_multiplier": 1},
-    "w1_proj": {"is_input_proj": True, "output_multiplier": 1},
-    "w2_proj": {"is_input_proj": False, "output_multiplier": 1},
 }
 
 

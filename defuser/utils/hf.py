@@ -16,8 +16,7 @@ from logbar import LogBar
 from packaging import version
 from transformers import AutoConfig
 
-from defuser.model_registry import MODEL_CONFIG, PATCH
-from defuser.utils.common import is_within_max_layers
+from defuser.model_registry import MODEL_CONFIG
 
 logger = LogBar(__name__)
 
@@ -105,34 +104,3 @@ def pre_check_config(model_name: str | torch.nn.Module):
     except:
         return True
     return True
-
-
-def patch(model: torch.nn.Module, max_layers: int | None = None) -> bool:
-    res = pre_check_config(model)
-    if not res:
-        return False
-    model_type = getattr(model.config, "model_type")
-    cfg = MODEL_CONFIG[model_type]
-    # patch blocks
-    for orig_path, custom_path in cfg.get(PATCH.REPLACE_MODULE, []):
-        orig_module_path, orig_class_name = orig_path.rsplit(".", 1)
-        custom_module_path, custom_class_name = custom_path.rsplit(".", 1)
-        try:
-            orig_module = importlib.import_module(orig_module_path)
-            custom_module = importlib.import_module(custom_module_path)
-            custom_class = getattr(custom_module, custom_class_name)
-            orig_class = getattr(orig_module, orig_class_name)
-            names = []
-            for n, m in model.named_modules():
-                if isinstance(m, orig_class):
-                    if not is_within_max_layers(n, max_layers):
-                        continue
-                    names.append((n, next(m.parameters()).dtype))
-            for (n, orig_dtype) in names:
-                model.set_submodule(n, custom_class(model.config).to(orig_dtype), True)
-            logger.info(f"Patched module: {orig_path} -> {custom_path}")
-            return True
-        except Exception as e:
-            logger.warn(f"Failed to patch {orig_path}: {e}")
-            return False
-    return False

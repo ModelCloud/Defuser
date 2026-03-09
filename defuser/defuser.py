@@ -5,14 +5,37 @@
 
 from torch import nn
 
-from defuser.modeling.fused_moe.update_module import update_module
-from defuser.utils.hf import patch
+from defuser.model_registry import MODEL_CONFIG
+from defuser.modeling.update_module import update_module
+from packaging import version
+import transformers
+from logbar import LogBar
+
+logger = LogBar(__name__)
+
+def check_model_compatibility(model: nn.Module) -> bool:
+    """Validate model type and transformers version compatibility."""
+    config = getattr(model, "config", None)
+    model_type = getattr(config, "model_type", None)
+    if model_type not in MODEL_CONFIG:
+        raise ValueError(f"Unsupported model_type: {model_type}")
+
+    min_ver = MODEL_CONFIG[model_type].get("min_transformers_version")
+    current_ver = version.parse(transformers.__version__)
+    if min_ver and current_ver < version.parse(min_ver):
+        logger.warn(
+            f"Skip conversion for model_type={model_type}: "
+            f"requires transformers>={min_ver}, current version is {transformers.__version__}."
+        )
+        return False
+
+    return True
 
 
-def convert_hf_model(
-    model: nn.Module,
-    cleanup_original: bool = False,
-    max_layers: int | None = None,
+def convert_model(
+        model: nn.Module,
+        cleanup_original: bool = False,
+        max_layers: int | None = None,
 ) -> nn.Module:
     if max_layers is not None and max_layers < 1:
         raise ValueError("max_layers must be >= 1 when provided")
@@ -48,53 +71,53 @@ def convert_hf_model(
     #
     # If this patch succeeds, it means the model is in the Qwen3 MoE format and
     # no further tensor transformation is required.
-    is_applied = patch(model, max_layers=max_layers)
-    if not is_applied:
-        # -----------------------------------------------------------------------
-        # Step 2: Handle Qwen3.5 MoE checkpoints
-        # -----------------------------------------------------------------------
-        #
-        # If `apply_modeling_patch` fails, we assume the checkpoint corresponds to
-        # **Qwen3.5 MoE**.
-        #
-        # In Qwen3.5 MoE, the expert MLP weights are stored in a **fused format**.
-        # Specifically, the checkpoint keeps tensors such as:
-        #
-        #     gate_up_proj
-        #     down_proj
-        #
-        # where `gate_proj` and `up_proj` are fused together.
-        #
-        # Because our runtime modeling expects **defused tensors**, simply replacing
-        # the module structure is not enough. We must also convert the stored
-        # parameters.
-        #
-        # `update_module()` performs two tasks:
-        #
-        #   1) Replace the modeling structure so that it matches the expected
-        #      defused MoE implementation.
-        #
-        #   2) Prepare the module for **tensor defusion** of the expert weights.
-        #
-        # After the structure update, `materialize_model_()` will be invoked to
-        # actually split the fused tensors:
-        #
-        #     gate_up_proj  -->  gate_proj + up_proj
-        #
-        # and ensure the module finally contains the expected parameters:
-        #
-        #     gate_proj
-        #     up_proj
-        #     down_proj
-        #
-        # This ensures compatibility between the Qwen3.5 fused checkpoint format
-        # and the runtime model implementation that operates on defused weights.
-        model = update_module(
-            model,
-            cleanup_original=cleanup_original,
-            max_layers=max_layers,
-        )
-    return model
 
+    # -----------------------------------------------------------------------
+    # Step 2: Handle Qwen3.5 MoE checkpoints
+    # -----------------------------------------------------------------------
+    #
+    # If `apply_modeling_patch` fails, we assume the checkpoint corresponds to
+    # **Qwen3.5 MoE**.
+    #
+    # In Qwen3.5 MoE, the expert MLP weights are stored in a **fused format**.
+    # Specifically, the checkpoint keeps tensors such as:
+    #
+    #     gate_up_proj
+    #     down_proj
+    #
+    # where `gate_proj` and `up_proj` are fused together.
+    #
+    # Because our runtime modeling expects **defused tensors**, simply replacing
+    # the module structure is not enough. We must also convert the stored
+    # parameters.
+    #
+    # `update_module()` performs two tasks:
+    #
+    #   1) Replace the modeling structure so that it matches the expected
+    #      defused MoE implementation.
+    #
+    #   2) Prepare the module for **tensor defusion** of the expert weights.
+    #
+    # After the structure update, `materialize_model_()` will be invoked to
+    # actually split the fused tensors:
+    #
+    #     gate_up_proj  -->  gate_proj + up_proj
+    #
+    # and ensure the module finally contains the expected parameters:
+    #
+    #     gate_proj
+    #     up_proj
+    #     down_proj
+    #
+    # This ensures compatibility between the Qwen3.5 fused checkpoint format
+    # and the runtime model implementation that operates on defused weights.
+
+    check_model_compatibility(model)
+
+    return update_module(
+        model,
+        cleanup_original=cleanup_original,
+        max_layers=max_layers,
+    )
 
 __all__ = ["convert_hf_model"]
