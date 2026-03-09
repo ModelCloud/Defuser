@@ -18,7 +18,7 @@ def check_model_compatibility(model: nn.Module) -> bool:
     config = getattr(model, "config", None)
     model_type = getattr(config, "model_type", None)
     if model_type not in MODEL_CONFIG:
-        raise ValueError(f"Unsupported model_type: {model_type}")
+        return False
 
     min_ver = MODEL_CONFIG[model_type].get("min_transformers_version")
     current_ver = version.parse(transformers.__version__)
@@ -112,7 +112,8 @@ def convert_model(
     # This ensures compatibility between the Qwen3.5 fused checkpoint format
     # and the runtime model implementation that operates on defused weights.
 
-    check_model_compatibility(model)
+    if not check_model_compatibility(model):
+        return model
 
     return update_module(
         model,
@@ -120,4 +121,4 @@ def convert_model(
         max_layers=max_layers,
     )
 
-__all__ = ["convert_hf_model"]
+__all__ = ["convert_model"]
