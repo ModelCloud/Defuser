@@ -10,12 +10,11 @@ from defuser.modeling.fused_moe.replace_modules import materialize_model
 
 
 def test_qwen3_moe():
-    from defuser.modeling.unfused_moe.qwen3_moe import LinearQwen3MoeSparseMoeBlock
-
-    config = AutoConfig.from_pretrained("/monster/data/model/Qwen3-30B-A3B")
+    model_id = "Qwen/Qwen3-30B-A3B"
+    config = AutoConfig.from_pretrained(model_id)
     config.num_hidden_layers = 1
     model = AutoModelForCausalLM.from_pretrained(
-        "/monster/data/model/Qwen3-30B-A3B",
+        model_id,
         config=config,
         ignore_mismatched_sizes=True,
     )
@@ -24,7 +23,13 @@ def test_qwen3_moe():
 
     converted = convert_hf_model(model, max_layers=1)
     assert converted
-    assert isinstance(model.model.layers[0].mlp, LinearQwen3MoeSparseMoeBlock)
+
+    experts = model.model.layers[0].mlp.experts
+    assert hasattr(experts, "0")
+    expert0 = getattr(experts, "0")
+    assert hasattr(expert0, "gate_proj")
+    assert hasattr(expert0, "up_proj")
+    assert hasattr(expert0, "down_proj")
 
 
 def test_qwen3_5_moe():

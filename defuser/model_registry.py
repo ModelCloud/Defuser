@@ -19,14 +19,8 @@ class CONVERSION_BEHAVIOR(str, Enum):
 MODEL_CONFIG = {
     "qwen3_moe": {
         "min_transformers_version": "5.0.0",
-        "behavior": CONVERSION_BEHAVIOR.REPLACE_ONLY,
+        "behavior": CONVERSION_BEHAVIOR.REPLACE_AND_DEFUSE,
         # structure path only replaces modeling structure
-        PATCH.REPLACE_MODULE: [
-            (
-                "transformers.models.qwen3_moe.modeling_qwen3_moe.Qwen3MoeSparseMoeBlock",
-                "defuser.modeling.unfused_moe.qwen3_moe.LinearQwen3MoeSparseMoeBlock",
-            )
-        ],
     },
     "qwen3_5_moe": {
         "min_transformers_version": "5.2.0",
