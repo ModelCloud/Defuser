@@ -31,6 +31,8 @@ from torch import nn
 
 from defuser.utils.device import clear_memory, to_meta
 
+from defuser import DEBUG_ON
+
 logger = LogBar(__name__)
 
 try:
@@ -108,7 +110,7 @@ def linear_loop_experts_forward(
     Returns:
         final_hidden_states: Output tensor of shape (num_tokens, hidden_dim)
     """
-    logger.debug(f"Using {LINEAR_LOOP_IMPL} experts forward for {self.__class__.__name__}")
+    if DEBUG_ON: logger.debug(f"Using {LINEAR_LOOP_IMPL} experts forward for {self.__class__.__name__}")
 
     # Handle [batch_size, seq_len, hidden_dim] input format
     if hidden_states.dim() == 3:
@@ -194,7 +196,7 @@ def register_linear_loop_experts() -> bool:
 
     if LINEAR_LOOP_IMPL not in ALL_EXPERTS_FUNCTIONS._global_mapping:
         ALL_EXPERTS_FUNCTIONS._global_mapping[LINEAR_LOOP_IMPL] = linear_loop_experts_forward
-        logger.debug(f"Registered '{LINEAR_LOOP_IMPL}' experts implementation")
+        if DEBUG_ON: logger.debug(f"Registered '{LINEAR_LOOP_IMPL}' experts implementation")
 
     return True
 
@@ -225,7 +227,7 @@ def _detect_expert_projections(module: nn.Module) -> dict[str, dict]:
             param = getattr(module, attr_name, None)
             if param is not None and isinstance(param, nn.Parameter) and param.dim() == 3:
                 # Use default config for unknown projections
-                logger.debug(f"Discovered unknown 3D projection: {attr_name}")
+                if DEBUG_ON: logger.debug(f"Discovered unknown 3D projection: {attr_name}")
                 detected[attr_name] = {"is_input_proj": True, "output_multiplier": 1}
 
     return detected
@@ -359,7 +361,7 @@ def _unfuse_single_projection(
             setattr(module, proj_name, to_meta(param))
             if has_bias:
                 setattr(module, bias_name, to_meta(bias_param))
-            logger.debug(f"Released memory for {proj_name} using to_meta()")
+            if DEBUG_ON: logger.debug(f"Released memory for {proj_name} using to_meta()")
         except Exception:
             pass
 
@@ -483,7 +485,7 @@ def _unfuse_experts_weights_inplace(
 
     # Only unfuse if the module supports the decorator (unless check_decorator is False)
     if check_decorator and not _experts_supports_decorator(module):
-        logger.debug(f"Skipping unfuse for {module.__class__.__name__}: does not support @use_experts_implementation")
+        if DEBUG_ON: logger.debug(f"Skipping unfuse for {module.__class__.__name__}: does not support @use_experts_implementation")
         return False
 
     # Get first projection to determine num_experts and layout
@@ -535,7 +537,7 @@ def _unfuse_experts_weights_inplace(
         if bias_param is not None:
             delattr(module, bias_name)
         fused_to_remove.append(proj_name)
-        logger.debug(f"Split {proj_name} -> {split_into}: {num_experts} experts")
+        if DEBUG_ON: logger.debug(f"Split {proj_name} -> {split_into}: {num_experts} experts")
 
     # Remove fused entries and add split entries
     for name in fused_to_remove:
@@ -616,13 +618,13 @@ def prepare_model_for_moe_quantization(model: nn.Module, implementation: str = L
     for name, module in model.named_modules():
         if _unfuse_experts_weights_inplace(module):
             unfused_modules.append(name)
-            logger.debug(f"[MoE Prep] Unfused '{name}'")
+            if DEBUG_ON: logger.debug(f"[MoE Prep] Unfused '{name}'")
 
     # Only set config if we actually unfused something
     # Models that don't support the decorator (like Llama4) won't have anything unfused
     # and should use full module replacement instead
     if unfused_modules:
-        logger.info(f"[MoE Prep] Unfused {len(unfused_modules)} MOE experts modules")
+        if DEBUG_ON: logger.info(f"[MoE Prep] Unfused {len(unfused_modules)} MOE experts modules")
         clear_memory()
 
         # Set config for linear_loop forward
@@ -630,6 +632,6 @@ def prepare_model_for_moe_quantization(model: nn.Module, implementation: str = L
             saved_impl = getattr(model.config, "experts_implementation", None)
             impl_to_set = saved_impl if saved_impl else implementation
             model.config._experts_implementation = impl_to_set
-            logger.debug(f"Set model.config._experts_implementation = '{impl_to_set}'")
+            if DEBUG_ON: logger.debug(f"Set model.config._experts_implementation = '{impl_to_set}'")
 
     return unfused_modules
