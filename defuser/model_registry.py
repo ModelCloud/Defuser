@@ -4,6 +4,9 @@
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 
 MODEL_CONFIG = {
+    "mixtral": {
+        "min_transformers_version": "5.0.0",
+    },
     "qwen3_moe": {
         "min_transformers_version": "5.0.0",
     },
