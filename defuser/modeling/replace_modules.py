@@ -306,7 +306,7 @@ def _apply_custom_replacements(
 
     # Log what was replaced
     if replaced:
-        if DEBUG_ON: logger.info(f"Replaced {len(replaced)} modules")
+        logger.info(f"Replaced {len(replaced)} modules")
 
     return replaced
 
