@@ -2,7 +2,6 @@
 # SPDX-FileCopyrightText: 2026 qubitium@modelcloud.ai
 # SPDX-License-Identifier: Apache-2.0
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
-
 from torch import nn
 
 from defuser.model_registry import MODEL_CONFIG

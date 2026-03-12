@@ -18,6 +18,8 @@ from tqdm import tqdm
 
 from defuser.utils.common import is_within_max_layers, is_transformers_version_greater_or_equal_5
 
+from defuser import DEBUG_ON
+
 logger = LogBar(__name__)
 
 
@@ -42,7 +44,7 @@ def materialize_model(model: torch.nn.Module) -> None:
             found_meta = True
 
     if not found_meta:
-        logger.debug("All parameters and buffers have been materialized from meta device.")
+        if DEBUG_ON: logger.debug("All parameters and buffers have been materialized from meta device.")
     release_original_module_(model)
 
 
@@ -90,7 +92,7 @@ class ReplacementModuleBase(ABC, torch.nn.Module):
                 )
 
             cls._replacement_registry[cls.original_module_class()] = cls
-            logger.debug(f"Registered {cls.__name__} for replacing {cls.original_module_class()}")
+            if DEBUG_ON: logger.debug(f"Registered {cls.__name__} for replacing {cls.original_module_class()}")
 
     def __init__(self, original: torch.nn.Module):
         super().__init__()
@@ -261,7 +263,7 @@ def _apply_custom_replacements(
     replaced = []
 
     # Step 1: Collect all modules that need replacement
-    logger.debug("Scanning for modules to replace")
+    if DEBUG_ON: logger.debug("Scanning for modules to replace")
     modules_to_replace = []
     for name, module in model.named_modules():
         # skip replaced modules
@@ -283,13 +285,14 @@ def _apply_custom_replacements(
             # The module might have been replaced earlier in the loop (parent-first replacement).
             # Skip if the class has changed or it no longer matches replacement criteria.
             if module.__class__.__name__ != class_name:
-                logger.debug(
-                    f"Skipping replacement for {name}: class changed from {class_name} to {module.__class__.__name__}"
-                )
+                if DEBUG_ON:
+                    logger.debug(
+                        f"Skipping replacement for {name}: class changed from {class_name} to {module.__class__.__name__}"
+                    )
                 continue
             replacement_cls = ReplacementModuleBase.get_replacement_class(class_name)
             if not replacement_cls.is_to_be_replaced(module):
-                logger.debug(f"Skipping replacement for {name}: no longer matches replacement criteria")
+                if DEBUG_ON: logger.debug(f"Skipping replacement for {name}: no longer matches replacement criteria")
                 continue
             orig_dtype = next(module.parameters()).dtype
             replacement = replacement_cls.from_original(
@@ -299,11 +302,11 @@ def _apply_custom_replacements(
             model.set_submodule(name, replacement)
             replaced.append((name, replacement_cls))
     else:
-        logger.debug("No modules found for replacement")
+        if DEBUG_ON: logger.debug("No modules found for replacement")
 
     # Log what was replaced
     if replaced:
-        logger.info(f"Replaced {len(replaced)} modules")
+        if DEBUG_ON: logger.info(f"Replaced {len(replaced)} modules")
 
     return replaced
 
@@ -362,7 +365,7 @@ class ModuleReplacementTracker:
             replacement_module_class=replacement.__class__.__name__,
             replacement_module_ref=weakref.ref(replacement),
         )
-        logger.debug(f"Registered replacement for module: {name}")
+        if DEBUG_ON: logger.debug(f"Registered replacement for module: {name}")
 
     def get_original(self, replacement: ReplacementModuleBase) -> torch.nn.Module | None:
         """Get the original module for a given replacement module."""
@@ -388,7 +391,7 @@ class ModuleReplacementTracker:
                 replacement_ref = info.replacement_module_ref()
                 if replacement_ref is None or replacement_ref is replacement:
                     del self._name_to_info[name]
-            logger.debug(f"Released original module for replacement {replacement_id}")
+            if DEBUG_ON: logger.debug(f"Released original module for replacement {replacement_id}")
 
     def release_all_originals(self) -> None:
         """Release all tracked original modules."""
@@ -402,13 +405,13 @@ class ModuleReplacementTracker:
         self._replacement_to_name.clear()
         self._name_to_info.clear()
         if count > 0:
-            logger.debug(f"Released {count} original modules from tracker")
+            if DEBUG_ON: logger.debug(f"Released {count} original modules from tracker")
 
     def clear(self) -> None:
         """Clear all tracked information."""
         self._replacement_to_name.clear()
         self._name_to_info.clear()
-        logger.debug("Cleared module replacement tracker")
+        if DEBUG_ON: logger.debug("Cleared module replacement tracker")
 
 
 _global_tracker = ModuleReplacementTracker()
