@@ -4,9 +4,43 @@
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 import torch
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForImageTextToText
+from transformers.models.qwen2_moe.modeling_qwen2_moe import Qwen2MoeConfig, Qwen2MoeForCausalLM
+from transformers.models.qwen3_next.modeling_qwen3_next import Qwen3NextConfig, Qwen3NextForCausalLM
 
 from defuser import convert_model
 from defuser.modeling.replace_modules import materialize_model
+
+
+def _tiny_moe_config(config_cls):
+    return config_cls(
+        num_hidden_layers=1,
+        hidden_size=64,
+        intermediate_size=128,
+        moe_intermediate_size=32,
+        num_attention_heads=4,
+        num_key_value_heads=4,
+        num_experts=4,
+        num_experts_per_tok=2,
+        vocab_size=128,
+    )
+
+
+def _assert_unfused_expert_module(experts):
+    assert hasattr(experts, "0")
+    expert0 = getattr(experts, "0")
+    assert hasattr(expert0, "gate_proj")
+    assert hasattr(expert0, "up_proj")
+    assert hasattr(expert0, "down_proj")
+
+
+def test_qwen2_moe():
+    model = Qwen2MoeForCausalLM(_tiny_moe_config(Qwen2MoeConfig))
+    assert model.config.model_type == "qwen2_moe"
+
+    converted = convert_model(model, max_layers=1)
+    assert converted
+
+    _assert_unfused_expert_module(model.model.layers[0].mlp.experts)
 
 
 def test_qwen3_moe():
@@ -24,12 +58,17 @@ def test_qwen3_moe():
     converted = convert_model(model, max_layers=1)
     assert converted
 
-    experts = model.model.layers[0].mlp.experts
-    assert hasattr(experts, "0")
-    expert0 = getattr(experts, "0")
-    assert hasattr(expert0, "gate_proj")
-    assert hasattr(expert0, "up_proj")
-    assert hasattr(expert0, "down_proj")
+    _assert_unfused_expert_module(model.model.layers[0].mlp.experts)
+
+
+def test_qwen3_next():
+    model = Qwen3NextForCausalLM(_tiny_moe_config(Qwen3NextConfig))
+    assert model.config.model_type == "qwen3_next"
+
+    converted = convert_model(model, max_layers=1)
+    assert converted
+
+    _assert_unfused_expert_module(model.model.layers[0].mlp.experts)
 
 
 def test_qwen3_5_moe():
@@ -60,11 +99,8 @@ def test_qwen3_5_moe():
     moe_block = model.model.language_model.layers[0].mlp
     experts = moe_block.experts
 
-    assert hasattr(experts, "0")
+    _assert_unfused_expert_module(experts)
     expert0 = getattr(experts, "0")
-    assert hasattr(expert0, "gate_proj")
-    assert hasattr(expert0, "up_proj")
-    assert hasattr(expert0, "down_proj")
 
     materialize_model(model.model.language_model.layers[0])
 
@@ -102,11 +138,8 @@ def test_mixtral():
     moe_block = model.model.layers[0].mlp
     experts = moe_block.experts
 
-    assert hasattr(experts, "0")
+    _assert_unfused_expert_module(experts)
     expert0 = getattr(experts, "0")
-    assert hasattr(expert0, "gate_proj")
-    assert hasattr(expert0, "up_proj")
-    assert hasattr(expert0, "down_proj")
 
     materialize_model(model.model.layers[0])
 
