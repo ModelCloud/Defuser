@@ -243,6 +243,8 @@ def apply_replacements(
     if auto_detect_moe and is_transformers_version_greater_or_equal_5():
         _handle_moe_modules(model)
 
+    _apply_custom_replacements(model, max_layers=max_layers)
+
     _log_first_moe_block(model, "after replacement")
 
     return model

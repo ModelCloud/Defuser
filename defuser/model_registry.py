@@ -22,4 +22,7 @@ MODEL_CONFIG = {
     "qwen3_next": {
         "min_transformers_version": "5.0.0",
     },
+    "qwen3_omni_moe": {
+        "min_transformers_version": "5.2.0",
+    },
 }
