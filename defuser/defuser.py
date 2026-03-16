@@ -5,6 +5,7 @@
 from torch import nn
 
 from defuser.model_registry import MODEL_CONFIG
+from defuser.modeling.model_patches import apply_model_patches
 from defuser.modeling.update_module import update_module
 from packaging import version
 import transformers
@@ -113,6 +114,8 @@ def convert_model(
 
     if not check_model_compatibility(model):
         return model
+
+    apply_model_patches(model)
 
     return update_module(
         model,
