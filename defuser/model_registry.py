@@ -62,4 +62,13 @@ MODEL_CONFIG = {
             )
         ],
     },
+    "glm4_moe": {
+        "min_transformers_version": "5.0.0",
+        PATCH.REPLACE_MODULE: [
+            (
+                "transformers.models.glm4_moe.modeling_glm4_moe.Glm4MoeMoE",
+                "defuser.modeling.unfused_moe.glm4_moe.LinearGlm4MoeMoE",
+            )
+        ],
+    },
 }

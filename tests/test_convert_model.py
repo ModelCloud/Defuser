@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import torch
 from torch import nn
+from transformers.models.glm4_moe.modeling_glm4_moe import Glm4MoeConfig, Glm4MoeForCausalLM
 from transformers.models.mixtral.configuration_mixtral import MixtralConfig
 from transformers.models.mixtral.modeling_mixtral import MixtralForCausalLM
 from transformers.models.qwen2_moe.modeling_qwen2_moe import Qwen2MoeConfig, Qwen2MoeForCausalLM
@@ -124,6 +125,23 @@ def _tiny_mixtral_config():
         eos_token_id=2,
     )
 
+
+def _tiny_glm4_moe_config():
+    return Glm4MoeConfig(
+        vocab_size=128,
+        hidden_size=5120,
+        intermediate_size=128,
+        num_hidden_layers=1,
+        num_attention_heads=96,
+        num_key_value_heads=4,
+        num_local_experts=4,
+        num_experts_per_tok=2,
+        pad_token_id=0,
+        bos_token_id=1,
+        eos_token_id=2,
+        head_dim=128,
+        first_k_dense_replace=-1,  # Ensure that the first layer is Glm4MoeMoE.
+    )
 
 def _assert_unfused_expert_module(experts):
     assert hasattr(experts, "0")
@@ -285,6 +303,24 @@ def test_mixtral():
 
     original_moe_block = model.model.layers[0].mlp
     assert isinstance(original_moe_block, LinearMixtralSparseMoeBlock)
+
+    converted = convert_model(model, cleanup_original=False, max_layers=1)
+    assert not converted
+
+    _assert_unfused_expert_module(model.model.layers[0].mlp.experts)
+
+
+def test_glm4_moe():
+    model_type = "glm4_moe"
+    replace_fused_blocks(model_type)
+
+    from defuser.modeling.unfused_moe.glm4_moe import LinearGlm4MoeMoE
+
+    model = Glm4MoeForCausalLM(_tiny_glm4_moe_config())
+    assert model.config.model_type == model_type
+    print("model",model)
+    original_moe_block = model.model.layers[0].mlp
+    assert isinstance(original_moe_block, LinearGlm4MoeMoE)
 
     converted = convert_model(model, cleanup_original=False, max_layers=1)
     assert not converted
