@@ -14,4 +14,12 @@ def convert_model(*args, **kwargs):
     return _convert_model(*args, **kwargs)
 
 
-__all__ = ["convert_model"]
+def replace_fused_blocks(*args, **kwargs):
+    """Lazily import conversion entrypoint to avoid import-time cycles."""
+    from .defuser import replace_fused_blocks as _replace_fused_blocks
+
+    return _replace_fused_blocks(*args, **kwargs)
+
+
+
+__all__ = ["convert_model", "replace_fused_blocks"]

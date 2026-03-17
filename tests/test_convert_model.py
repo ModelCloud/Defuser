@@ -16,8 +16,10 @@ from transformers.models.qwen3_next.modeling_qwen3_next import Qwen3NextConfig, 
 from transformers.models.qwen3_omni_moe.configuration_qwen3_omni_moe import Qwen3OmniMoeConfig
 from transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe import Qwen3OmniMoeForConditionalGeneration
 
-from defuser import convert_model
+from defuser import convert_model, replace_fused_blocks
 from defuser.modeling.replace_modules import ReplacementModuleBase, apply_replacements, materialize_model
+
+
 
 
 def _tiny_moe_config(config_cls):
@@ -142,11 +144,14 @@ def test_qwen2_moe():
 
 
 def test_qwen3_moe():
+    model_type = "qwen3_moe"
+    replace_fused_blocks(model_type)
+
     model = Qwen3MoeForCausalLM(_tiny_moe_config(Qwen3MoeConfig))
-    assert model.config.model_type == "qwen3_moe"
+    assert model.config.model_type == model_type
 
     converted = convert_model(model, max_layers=1)
-    assert converted
+    assert not converted
 
     _assert_unfused_expert_module(model.model.layers[0].mlp.experts)
 
