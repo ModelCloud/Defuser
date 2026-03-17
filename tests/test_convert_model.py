@@ -260,6 +260,10 @@ def test_apply_replacements_runs_custom_replacements():
     assert isinstance(model.layers[0], DummyReplacement)
 
 
+def test_replace_fused_blocks_returns_false_for_unregistered_model():
+    assert replace_fused_blocks("unsupported_model_type") is False
+
+
 def test_qwen3_5_moe():
     from transformers.models.qwen3_5_moe.modeling_qwen3_5_moe import Qwen3_5MoeSparseMoeBlock
 
