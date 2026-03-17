@@ -269,32 +269,18 @@ def test_qwen3_5_moe():
 
 
 def test_mixtral():
-    from transformers.models.mixtral.modeling_mixtral import MixtralSparseMoeBlock
+    model_type = "mixtral"
+    replace_fused_blocks(model_type)
+
+    from defuser.modeling.unfused_moe.mixtral import LinearMixtralSparseMoeBlock
 
     model = MixtralForCausalLM(_tiny_mixtral_config())
-    assert model.config.model_type == "mixtral"
+    assert model.config.model_type == model_type
 
     original_moe_block = model.model.layers[0].mlp
-    assert isinstance(original_moe_block, MixtralSparseMoeBlock)
-
-    hidden_dim = original_moe_block.experts.gate_up_proj.shape[-1]
-    intermediate_dim = original_moe_block.experts.gate_up_proj.shape[1] // 2
-
-    expected_gate = original_moe_block.experts.gate_up_proj[0, :intermediate_dim, :hidden_dim].contiguous().clone()
-    expected_up = original_moe_block.experts.gate_up_proj[0, intermediate_dim:, :hidden_dim].contiguous().clone()
-    expected_down = original_moe_block.experts.down_proj[0, :hidden_dim, :intermediate_dim].contiguous().clone()
+    assert isinstance(original_moe_block, LinearMixtralSparseMoeBlock)
 
     converted = convert_model(model, cleanup_original=False, max_layers=1)
-    assert converted
+    assert not converted
 
-    moe_block = model.model.layers[0].mlp
-    experts = moe_block.experts
-
-    _assert_unfused_expert_module(experts)
-    expert0 = getattr(experts, "0")
-
-    materialize_model(model.model.layers[0])
-
-    torch.testing.assert_close(expert0.gate_proj.weight, expected_gate)
-    torch.testing.assert_close(expert0.up_proj.weight, expected_up)
-    torch.testing.assert_close(expert0.down_proj.weight, expected_down)
+    _assert_unfused_expert_module(model.model.layers[0].mlp.experts)

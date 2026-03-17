@@ -12,6 +12,12 @@ class PATCH(str, Enum):
 MODEL_CONFIG = {
     "mixtral": {
         "min_transformers_version": "5.0.0",
+        PATCH.REPLACE_MODULE: [
+            (
+                "transformers.models.mixtral.modeling_mixtral.MixtralSparseMoeBlock",
+                "defuser.modeling.unfused_moe.mixtral.LinearMixtralSparseMoeBlock",
+            )
+        ],
     },
     "qwen2_moe": {
         "min_transformers_version": "5.0.0",

@@ -30,6 +30,10 @@ def get_checkpoint_conversion_mapping(model_type):
     return conversion_mapping.orig_get_checkpoint_conversion_mapping(model_type)
 
 
+class PatchError(Exception):
+    pass
+
+
 def replace_fused_blocks(model_type: str) -> bool:
     cfg = MODEL_CONFIG[model_type]
     for orig_path, custom_path in cfg.get(PATCH.REPLACE_MODULE, []):
@@ -39,6 +43,14 @@ def replace_fused_blocks(model_type: str) -> bool:
         try:
             orig_module = importlib.import_module(orig_module_path)
             custom_module = importlib.import_module(custom_module_path)
+            print("orig_module", orig_module, orig_class_name)
+            # Validate class existence before patching
+            if not hasattr(orig_module, orig_class_name):
+                raise PatchError(f"Original class[{orig_class_name}] not found: {orig_module}")
+
+            if not hasattr(custom_module, custom_class_name):
+                raise PatchError(f"Custom class[{custom_class_name}] not found: {custom_module}")
+
             custom_class = getattr(custom_module, custom_class_name)
             setattr(orig_module, orig_class_name, custom_class)
 
@@ -56,6 +68,9 @@ def replace_fused_blocks(model_type: str) -> bool:
             return True
 
         except Exception as e:
+            if isinstance(e, PatchError):
+                raise e
+
             logger.warning(f"Failed to patch {orig_path}: {e}")
             return False
     return False
