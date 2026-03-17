@@ -46,6 +46,12 @@ MODEL_CONFIG = {
     },
     "qwen3_next": {
         "min_transformers_version": "5.0.0",
+        PATCH.REPLACE_MODULE: [
+            (
+                "transformers.models.qwen3_next.modeling_qwen3_next.Qwen3NextSparseMoeBlock",
+                "defuser.modeling.unfused_moe.qwen3_next.LinearQwen3NextSparseMoeBlock",
+            )
+        ],
     },
     "qwen3_omni_moe": {
         "min_transformers_version": "5.2.0",

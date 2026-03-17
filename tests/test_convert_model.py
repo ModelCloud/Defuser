@@ -160,11 +160,14 @@ def test_qwen3_moe():
 
 
 def test_qwen3_next():
+    model_type = "qwen3_next"
+    replace_fused_blocks(model_type)
+
     model = Qwen3NextForCausalLM(_tiny_moe_config(Qwen3NextConfig))
-    assert model.config.model_type == "qwen3_next"
+    assert model.config.model_type == model_type
 
     converted = convert_model(model, max_layers=1)
-    assert converted
+    assert not converted
 
     _assert_unfused_expert_module(model.model.layers[0].mlp.experts)
 
