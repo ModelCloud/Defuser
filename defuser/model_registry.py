@@ -6,7 +6,6 @@ from enum import Enum
 
 
 class PATCH(str, Enum):
-    DEFUSE = "defuse"
     REPLACE_MODULE = "replace_module"
 
 
@@ -16,6 +15,12 @@ MODEL_CONFIG = {
     },
     "qwen2_moe": {
         "min_transformers_version": "5.0.0",
+        PATCH.REPLACE_MODULE: [
+            (
+                "transformers.models.qwen2_moe.modeling_qwen2_moe.Qwen2MoeSparseMoeBlock",
+                "defuser.modeling.unfused_moe.qwen2_moe.LinearQwen2MoeSparseMoeBlock",
+            )
+        ],
     },
     "qwen3_moe": {
         "min_transformers_version": "5.0.0",

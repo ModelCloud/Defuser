@@ -134,11 +134,14 @@ def _assert_unfused_expert_module(experts):
 
 
 def test_qwen2_moe():
+    model_type = "qwen2_moe"
+    replace_fused_blocks(model_type)
+
     model = Qwen2MoeForCausalLM(_tiny_moe_config(Qwen2MoeConfig))
-    assert model.config.model_type == "qwen2_moe"
+    assert model.config.model_type == model_type
 
     converted = convert_model(model, max_layers=1)
-    assert converted
+    assert not converted
 
     _assert_unfused_expert_module(model.model.layers[0].mlp.experts)
 
