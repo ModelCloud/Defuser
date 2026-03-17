@@ -37,7 +37,10 @@ class PatchError(Exception):
 def replace_fused_blocks(model_type: str) -> bool:
     apply_model_class_patches(model_type)
 
-    cfg = MODEL_CONFIG[model_type]
+    cfg = MODEL_CONFIG.get(model_type)
+    if cfg is None:
+        return False
+
     for orig_path, custom_path in cfg.get(PATCH.REPLACE_MODULE, []):
         orig_module_path, orig_class_name = orig_path.rsplit(".", 1)
         custom_module_path, custom_class_name = custom_path.rsplit(".", 1)
