@@ -54,6 +54,12 @@ MODEL_CONFIG = {
         ],
     },
     "qwen3_omni_moe": {
-        "min_transformers_version": "5.2.0",
+        "min_transformers_version": "5.0.0",
+        PATCH.REPLACE_MODULE: [
+            (
+                "transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe.Qwen3OmniMoeThinkerTextSparseMoeBlock",
+                "defuser.modeling.unfused_moe.qwen3_omni_moe.LinearQwen3OmniMoeThinkerTextSparseMoeBlock",
+            )
+        ],
     },
 }

@@ -173,11 +173,14 @@ def test_qwen3_next():
 
 
 def test_qwen3_omni():
+    model_type = "qwen3_omni_moe"
+    replace_fused_blocks(model_type)
+
     model = Qwen3OmniMoeForConditionalGeneration(_tiny_qwen3_omni_config())
-    assert model.config.model_type == "qwen3_omni_moe"
+    assert model.config.model_type == model_type
 
     converted = convert_model(model, max_layers=1)
-    assert converted
+    assert not converted
 
     _assert_unfused_expert_module(model.thinker.model.layers[0].mlp.experts)
 

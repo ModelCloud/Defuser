@@ -7,7 +7,7 @@ import importlib
 from torch import nn
 
 from defuser.model_registry import MODEL_CONFIG, PATCH
-from defuser.modeling.model_patches import apply_model_patches
+from defuser.modeling.model_patches import apply_model_class_patches
 from defuser.modeling.update_module import update_module
 from packaging import version
 import transformers
@@ -35,6 +35,8 @@ class PatchError(Exception):
 
 
 def replace_fused_blocks(model_type: str) -> bool:
+    apply_model_class_patches(model_type)
+
     cfg = MODEL_CONFIG[model_type]
     for orig_path, custom_path in cfg.get(PATCH.REPLACE_MODULE, []):
         orig_module_path, orig_class_name = orig_path.rsplit(".", 1)
@@ -177,8 +179,6 @@ def convert_model(
 
     if not check_model_compatibility(model):
         return False
-
-    apply_model_patches(model)
 
     # If fused blocks have already been structurally replaced at load model before,
     # there is no need to perform runtime defusing again
