@@ -2,16 +2,81 @@
 # SPDX-FileCopyrightText: 2026 qubitium@modelcloud.ai
 # SPDX-License-Identifier: Apache-2.0
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
+import importlib
+
 from torch import nn
 
-from defuser.model_registry import MODEL_CONFIG
-from defuser.modeling.model_patches import apply_model_patches
+from defuser.model_registry import MODEL_CONFIG, PATCH
+from defuser.modeling.model_patches import apply_model_class_patches, apply_model_patches
 from defuser.modeling.update_module import update_module
 from packaging import version
 import transformers
 from logbar import LogBar
 
 logger = LogBar(__name__)
+
+def get_checkpoint_conversion_mapping(model_type):
+    from transformers import conversion_mapping
+
+    if not hasattr(conversion_mapping, "orig_get_checkpoint_conversion_mapping"):
+        conversion_mapping.orig_get_checkpoint_conversion_mapping = conversion_mapping.get_checkpoint_conversion_mapping
+
+    cfg = MODEL_CONFIG.get(model_type)
+    if cfg:
+        return cfg.get("checkpoint_mapping", [])
+
+    from transformers import conversion_mapping
+
+    return conversion_mapping.orig_get_checkpoint_conversion_mapping(model_type)
+
+
+class PatchError(Exception):
+    pass
+
+
+def replace_fused_blocks(model_type: str) -> bool:
+    apply_model_class_patches(model_type)
+
+    cfg = MODEL_CONFIG[model_type]
+    for orig_path, custom_path in cfg.get(PATCH.REPLACE_MODULE, []):
+        orig_module_path, orig_class_name = orig_path.rsplit(".", 1)
+        custom_module_path, custom_class_name = custom_path.rsplit(".", 1)
+
+        try:
+            orig_module = importlib.import_module(orig_module_path)
+            custom_module = importlib.import_module(custom_module_path)
+            print("orig_module", orig_module, orig_class_name)
+            # Validate class existence before patching
+            if not hasattr(orig_module, orig_class_name):
+                raise PatchError(f"Original class[{orig_class_name}] not found: {orig_module}")
+
+            if not hasattr(custom_module, custom_class_name):
+                raise PatchError(f"Custom class[{custom_class_name}] not found: {custom_module}")
+
+            custom_class = getattr(custom_module, custom_class_name)
+            setattr(orig_module, orig_class_name, custom_class)
+
+            if version.parse(transformers.__version__) >= version.parse("5.0.0"):
+                from transformers import conversion_mapping
+
+                if not hasattr(conversion_mapping, "orig_get_checkpoint_conversion_mapping"):
+                    conversion_mapping.orig_get_checkpoint_conversion_mapping = (
+                        conversion_mapping.get_checkpoint_conversion_mapping
+                    )
+
+                conversion_mapping.get_checkpoint_conversion_mapping = get_checkpoint_conversion_mapping
+                transformers.modeling_utils.get_checkpoint_conversion_mapping = get_checkpoint_conversion_mapping
+            logger.info(f"Patched {orig_path} -> {custom_path}")
+            return True
+
+        except Exception as e:
+            if isinstance(e, PatchError):
+                raise e
+
+            logger.warning(f"Failed to patch {orig_path}: {e}")
+            return False
+    return False
+
 
 def check_model_compatibility(model: nn.Module) -> bool:
     """Validate model type and transformers version compatibility."""
@@ -36,7 +101,7 @@ def convert_model(
         model: nn.Module,
         cleanup_original: bool = False,
         max_layers: int | None = None,
-) -> nn.Module:
+) -> bool:
     if max_layers is not None and max_layers < 1:
         raise ValueError("max_layers must be >= 1 when provided")
 
@@ -113,14 +178,24 @@ def convert_model(
     # and the runtime model implementation that operates on defused weights.
 
     if not check_model_compatibility(model):
-        return model
+        return False
 
     apply_model_patches(model)
 
-    return update_module(
+    # If fused blocks have already been structurally replaced at load model before,
+    # there is no need to perform runtime defusing again
+    if MODEL_CONFIG[model.config.model_type].get(PATCH.REPLACE_MODULE):
+        return False
+
+    # Perform runtime defusing of fused projections
+    # Split already-loaded fused modules (e.g., gate_up_proj/down_proj) into
+    # independent expert layers: gate_proj / up_proj / down_proj
+    update_module(
         model,
         cleanup_original=cleanup_original,
         max_layers=max_layers,
     )
 
-__all__ = ["convert_model"]
+    return True
+
+__all__ = ["convert_model", "replace_fused_blocks"]
