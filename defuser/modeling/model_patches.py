@@ -14,6 +14,7 @@ logger = LogBar(__name__)
 
 
 _MODEL_CLASS_PATCH_REGISTRY: dict[str, Callable] = {}
+_MODEL_PATCH_REGISTRY: dict[str, Callable] = {}
 
 
 def register_model_class_patch(model_type: str):
@@ -24,8 +25,15 @@ def register_model_class_patch(model_type: str):
     return decorator
 
 
+def register_model_patch(model_type: str):
+    def decorator(func: Callable):
+        _MODEL_PATCH_REGISTRY[model_type] = func
+        return func
+
+    return decorator
+
 @register_model_class_patch("qwen3_omni_moe")
-def patch_qwen3_omni_text_runtime() -> list[str]:
+def patch_qwen3_omni_text_class() -> list[str]:
     from transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe import Qwen3OmniMoeForConditionalGeneration, Qwen3OmniMoePreTrainedModel
     from defuser.modeling.unfused_moe.qwen3_omni_moe import LinearQwen3OmniMoeThinkerTextSparseMoeBlock
     orig_init_weights = Qwen3OmniMoePreTrainedModel._init_weights
@@ -53,7 +61,12 @@ def patch_qwen3_omni_text_runtime() -> list[str]:
 
     Qwen3OmniMoePreTrainedModel._init_weights = patched_init_weights
 
-    model_cls = Qwen3OmniMoeForConditionalGeneration
+    return []
+
+
+@register_model_patch("qwen3_omni_moe")
+def patch_qwen3_omni_text_runtime(model) -> list[str]:
+    model_cls = type(model)
     if not getattr(model_cls, "__module__", "").startswith("transformers.models.qwen3_omni_moe."):
         return []
 
@@ -71,7 +84,6 @@ def patch_qwen3_omni_text_runtime() -> list[str]:
         applied.append("generate")
 
     if "forward" not in model_cls.__dict__:
-
         def forward(self, *args, **kwargs):
             return self.thinker(*args, **kwargs)
 
@@ -89,6 +101,18 @@ def apply_model_class_patches(model_type) -> list[str]:
 
     applied = patch_model_class()
     if applied and DEBUG_ON:
-        logger.debug(f"Applied model patches for model_type={model_type}: {', '.join(applied)}")
+        logger.debug(f"Applied model class patches for model_type={model_type}: {', '.join(applied)}")
     return applied
 
+
+def apply_model_patches(model) -> list[str]:
+    config = getattr(model, "config", None)
+    model_type = getattr(config, "model_type", None)
+    patch = _MODEL_PATCH_REGISTRY.get(model_type)
+    if patch is None:
+        return []
+
+    applied = patch(model)
+    if applied and DEBUG_ON:
+        logger.debug(f"Applied model patches for model_type={model_type}: {', '.join(applied)}")
+    return applied

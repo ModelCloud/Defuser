@@ -7,7 +7,7 @@ import importlib
 from torch import nn
 
 from defuser.model_registry import MODEL_CONFIG, PATCH
-from defuser.modeling.model_patches import apply_model_class_patches
+from defuser.modeling.model_patches import apply_model_class_patches, apply_model_patches
 from defuser.modeling.update_module import update_module
 from packaging import version
 import transformers
@@ -179,6 +179,8 @@ def convert_model(
 
     if not check_model_compatibility(model):
         return False
+
+    apply_model_patches(model)
 
     # If fused blocks have already been structurally replaced at load model before,
     # there is no need to perform runtime defusing again
