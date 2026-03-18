@@ -22,6 +22,12 @@ class SplitFusedExpertGateUpProj(ConversionOps):
         self.expert_dim = expert_dim
         self.proj_dim = proj_dim
 
+    @staticmethod
+    def _expert_target(pattern: str, expert_idx: int) -> str:
+        if "*" in pattern:
+            return pattern.replace("*", str(expert_idx))
+        return pattern.replace(".0.", f".{expert_idx}.", 1)
+
     @torch.no_grad
     def convert(
         self, input_dict: dict[str, torch.Tensor], source_patterns: list[str], target_patterns: list[str], **kwargs
@@ -37,8 +43,8 @@ class SplitFusedExpertGateUpProj(ConversionOps):
         for expert_idx in range(num_experts):
             expert_tensor = tensor.select(self.expert_dim, expert_idx)
             gate_proj, up_proj = torch.chunk(expert_tensor, 2, dim=self.proj_dim)
-            split_tensors[target_patterns[0].replace("*", str(expert_idx))] = gate_proj.contiguous().clone()
-            split_tensors[target_patterns[1].replace("*", str(expert_idx))] = up_proj.contiguous().clone()
+            split_tensors[self._expert_target(target_patterns[0], expert_idx)] = gate_proj.contiguous().clone()
+            split_tensors[self._expert_target(target_patterns[1], expert_idx)] = up_proj.contiguous().clone()
 
         return split_tensors
 
@@ -86,3 +92,38 @@ class MergeSplitExpertGateUpProj(ConversionOps):
             fused_per_expert.append(fused.contiguous())
 
         return self._stack.convert({target_patterns[0]: fused_per_expert}, [target_patterns[0]], target_patterns)
+
+
+class SplitFusedExpertDownProj(ConversionOps):
+    """Split Mixtral-style fused expert down projections into per-expert linears."""
+
+    def __init__(self, expert_dim: int = 0):
+        self.expert_dim = expert_dim
+
+    @staticmethod
+    def _expert_target(pattern: str, expert_idx: int) -> str:
+        if "*" in pattern:
+            return pattern.replace("*", str(expert_idx))
+        return pattern.replace(".0.", f".{expert_idx}.", 1)
+
+    @torch.no_grad
+    def convert(
+        self, input_dict: dict[str, torch.Tensor], source_patterns: list[str], target_patterns: list[str], **kwargs
+    ) -> dict[str, torch.Tensor]:
+        if len(target_patterns) != 1:
+            raise ValueError("SplitFusedExpertDownProj expects a single target pattern.")
+
+        tensors = next(iter(input_dict.values()))
+        tensor = tensors[0] if isinstance(tensors, list) else tensors
+        num_experts = tensor.size(self.expert_dim)
+
+        split_tensors: dict[str, torch.Tensor] = {}
+        for expert_idx in range(num_experts):
+            expert_tensor = tensor.select(self.expert_dim, expert_idx)
+            split_tensors[self._expert_target(target_patterns[0], expert_idx)] = expert_tensor.contiguous().clone()
+
+        return split_tensors
+
+    @property
+    def reverse_op(self) -> ConversionOps:
+        return MergeModulelist(dim=self.expert_dim)

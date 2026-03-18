@@ -4,9 +4,9 @@
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 from enum import Enum
 
-from transformers.core_model_loading import SplitModulelist, WeightConverter, WeightRenaming
+from transformers.core_model_loading import WeightConverter, WeightRenaming
 
-from defuser.checkpoint_ops import OwnedChunk, SplitFusedExpertGateUpProj
+from defuser.checkpoint_ops import OwnedChunk, SplitFusedExpertDownProj, SplitFusedExpertGateUpProj
 
 
 class PATCH(str, Enum):
@@ -30,15 +30,15 @@ MODEL_CONFIG = {
             WeightConverter(
                 source_patterns=".experts.gate_up_proj",
                 target_patterns=[
-                    ".experts.*.gate_proj.weight",
-                    ".experts.*.up_proj.weight",
+                    ".experts.0.gate_proj.weight",
+                    ".experts.0.up_proj.weight",
                 ],
                 operations=[SplitFusedExpertGateUpProj()],
             ),
             WeightConverter(
                 source_patterns=".experts.down_proj",
-                target_patterns=".experts.*.down_proj.weight",
-                operations=[SplitModulelist(dim=0)],
+                target_patterns=".experts.0.down_proj.weight",
+                operations=[SplitFusedExpertDownProj()],
             ),
         ],
     },

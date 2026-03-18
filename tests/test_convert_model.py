@@ -467,8 +467,8 @@ def test_mixtral_checkpoint_mapping_splits_fused_experts():
 
     assert isinstance(gate_up_converter.operations[0], SplitFusedExpertGateUpProj)
     assert gate_up_converter.target_patterns == [
-        ".experts.*.gate_proj.weight",
-        ".experts.*.up_proj.weight",
+        ".experts.0.gate_proj.weight",
+        ".experts.0.up_proj.weight",
     ]
 
     fused_gate_up = torch.arange(4 * 6 * 8, dtype=torch.float32).reshape(4, 6, 8)
