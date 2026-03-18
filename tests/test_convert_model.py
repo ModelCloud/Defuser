@@ -19,6 +19,7 @@ from transformers.models.qwen3_5_moe.modeling_qwen3_5_moe import Qwen3_5MoeForCo
 from transformers.models.qwen3_next.modeling_qwen3_next import Qwen3NextConfig, Qwen3NextForCausalLM
 from transformers.models.qwen3_omni_moe.configuration_qwen3_omni_moe import Qwen3OmniMoeConfig
 from transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe import Qwen3OmniMoeForConditionalGeneration
+from transformers.models.gpt_oss.modeling_gpt_oss import GptOssConfig, GptOssForCausalLM
 
 from defuser import convert_model, replace_fused_blocks
 from defuser.checkpoint_ops import OwnedChunk
@@ -173,6 +174,21 @@ def _tiny_glm4v_config():
             "patch_size": 4,
             "out_hidden_size": 64,
         },
+    )
+
+def _tiny_gpt_oss_config():
+    return GptOssConfig(
+        vocab_size=128,
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=1,
+        num_attention_heads=4,
+        num_key_value_heads=4,
+        num_local_experts=4,
+        num_experts_per_tok=2,
+        pad_token_id=0,
+        bos_token_id=1,
+        eos_token_id=2,
     )
 
 def _assert_unfused_expert_module(experts):
@@ -431,3 +447,38 @@ def test_glm4v_split_forward_matches_fused_math():
 
     # The split module should exactly reproduce the original fused MLP math.
     torch.testing.assert_close(mlp(hidden_states), expected)
+
+def test_gpt_oss():
+    from transformers.models.gpt_oss.modeling_gpt_oss import GptOssMLP
+
+    model = GptOssForCausalLM(_tiny_gpt_oss_config())
+    assert model.config.model_type == "gpt_oss"
+
+    original_moe_block = model.model.layers[0].mlp
+    assert isinstance(original_moe_block, GptOssMLP)
+
+    experts = original_moe_block.experts
+
+    gate_up = experts.gate_up_proj
+    down = experts.down_proj
+
+    expert_dim = model.config.intermediate_size
+
+    expected_gate = gate_up[0, :, :expert_dim].clone().T
+    expected_up = gate_up[0, :, expert_dim:].clone().T
+    expected_down = down[0].clone().T
+
+    converted = convert_model(model, cleanup_original=False, max_layers=1)
+    assert converted
+
+    moe_block = model.model.layers[0].mlp
+    experts = moe_block.experts
+
+    _assert_unfused_expert_module(experts)
+    expert0 = getattr(experts, "0")
+
+    materialize_model(model.model.layers[0])
+
+    torch.testing.assert_close(expert0.gate_proj.weight, expected_gate)
+    torch.testing.assert_close(expert0.up_proj.weight, expected_up)
+    torch.testing.assert_close(expert0.down_proj.weight, expected_down)
