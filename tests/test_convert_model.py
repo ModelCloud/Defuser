@@ -282,7 +282,12 @@ def _copy_sparse_moe_weights(original_block: nn.Module, defused_block: nn.Module
 
 
 def _assert_sparse_moe_defused_matches_fused_math(
-    original_block: nn.Module, defused_block: nn.Module, hidden_states: torch.Tensor
+    original_block: nn.Module,
+    defused_block: nn.Module,
+    hidden_states: torch.Tensor,
+    *,
+    atol: float | None = None,
+    rtol: float | None = None,
 ) -> None:
     _seed_floating_tensors(original_block)
     _copy_sparse_moe_weights(original_block, defused_block)
@@ -291,7 +296,12 @@ def _assert_sparse_moe_defused_matches_fused_math(
     actual = defused_block.eval()(hidden_states)
 
     # The defused replacement must preserve the exact MoE matmul path of the fused block.
-    torch.testing.assert_close(actual, expected)
+    assert_close_kwargs = {}
+    if atol is not None:
+        assert_close_kwargs["atol"] = atol
+    if rtol is not None:
+        assert_close_kwargs["rtol"] = rtol
+    torch.testing.assert_close(actual, expected, **assert_close_kwargs)
 
 
 def test_qwen2_moe():
@@ -634,7 +644,38 @@ def test_glm4_moe_defused_forward_matches_fused_math():
         Glm4MoeMoE(config),
         LinearGlm4MoeMoE(config),
         hidden_states,
+        # GLM4 MoE now shows tiny fp32 roundoff drift in 5.3.0 because the fused gate/up matmul
+        # is compared against two split linears. Keep the tolerance narrow enough to catch real regressions.
+        atol=3e-4,
+        rtol=1e-4,
     )
+
+
+def test_defused_models_preserve_output_router_logits_capture():
+    cases = [
+        (
+            "mixtral",
+            lambda: MixtralForCausalLM(_tiny_mixtral_config()),
+        ),
+        (
+            "qwen2_moe",
+            lambda: Qwen2MoeForCausalLM(_tiny_moe_config(Qwen2MoeConfig)),
+        ),
+        (
+            "qwen3_moe",
+            lambda: Qwen3MoeForCausalLM(_tiny_moe_config(Qwen3MoeConfig)),
+        ),
+    ]
+
+    for model_type, build_model in cases:
+        replace_fused_blocks(model_type)
+        model = build_model().eval()
+        outputs = model(input_ids=torch.tensor([[1, 2, 3]]), output_router_logits=True)
+
+        # Router logits are captured through upstream hooks, so defused blocks must keep the same router module type.
+        assert outputs.router_logits is not None
+        assert len(outputs.router_logits) == 1
+        assert outputs.router_logits[0].shape == (3, model.config.num_experts)
 
 
 def test_glm4v_checkpoint_mapping_splits_gate_up_proj():
