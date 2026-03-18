@@ -485,7 +485,7 @@ def _unfuse_experts_weights_inplace(
 
     # Only unfuse if the module supports the decorator (unless check_decorator is False)
     if check_decorator and not _experts_supports_decorator(module):
-        if DEBUG_ON: logger.debug(f"Skipping unfuse for {module.__class__.__name__}: does not support @use_experts_implementation")
+        logger.debug(f"Skipping unfuse for {module.__class__.__name__}: does not support @use_experts_implementation")
         return False
 
     # Get first projection to determine num_experts and layout
