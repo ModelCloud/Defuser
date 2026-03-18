@@ -5,6 +5,7 @@
 from types import SimpleNamespace
 
 import torch
+from safetensors.torch import save_file
 from torch import nn
 from transformers.core_model_loading import WeightConverter
 from transformers.models.glm4_moe.modeling_glm4_moe import Glm4MoeConfig, Glm4MoeForCausalLM, Glm4MoeMoE
@@ -36,7 +37,7 @@ from transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe import (
 )
 
 from defuser import convert_model, replace_fused_blocks
-from defuser.checkpoint_ops import OwnedChunk
+from defuser.checkpoint_ops import OwnedChunk, SplitFusedExpertGateUpProj
 from defuser.modeling.replace_modules import ReplacementModuleBase, apply_replacements, materialize_model
 from defuser.modeling.unfused_moe.glm4_moe import LinearGlm4MoeMoE
 from defuser.modeling.unfused_moe.mixtral import LinearMixtralSparseMoeBlock
@@ -198,6 +199,49 @@ def _tiny_glm4v_config():
             "out_hidden_size": 64,
         },
     )
+
+
+def _write_single_safetensors_checkpoint(path, state_dict: dict[str, torch.Tensor], config) -> None:
+    config.save_pretrained(path)
+    save_file({name: tensor.detach().cpu().contiguous() for name, tensor in state_dict.items()}, str(path / "model.safetensors"))
+
+
+def _build_legacy_mixtral_state_dict(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    legacy_state = {}
+    for name, tensor in state_dict.items():
+        if name.endswith(".mlp.gate.weight"):
+            legacy_state[name.replace(".mlp.", ".block_sparse_moe.")] = tensor
+            continue
+
+        if name.endswith(".mlp.experts.gate_up_proj"):
+            prefix = name[: -len(".mlp.experts.gate_up_proj")] + ".block_sparse_moe.experts"
+            split_size = tensor.shape[1] // 2
+            for expert_idx in range(tensor.shape[0]):
+                legacy_state[f"{prefix}.{expert_idx}.w1.weight"] = tensor[expert_idx, :split_size].contiguous()
+                legacy_state[f"{prefix}.{expert_idx}.w3.weight"] = tensor[expert_idx, split_size:].contiguous()
+            continue
+
+        if name.endswith(".mlp.experts.down_proj"):
+            prefix = name[: -len(".mlp.experts.down_proj")] + ".block_sparse_moe.experts"
+            for expert_idx in range(tensor.shape[0]):
+                legacy_state[f"{prefix}.{expert_idx}.w2.weight"] = tensor[expert_idx].contiguous()
+            continue
+
+        legacy_state[name] = tensor
+
+    return legacy_state
+
+
+def _create_original_mixtral_source_model(config):
+    from transformers.models.mixtral import modeling_mixtral as mixtral_modeling
+
+    current_moe_block = mixtral_modeling.MixtralSparseMoeBlock
+    mixtral_modeling.MixtralSparseMoeBlock = MixtralSparseMoeBlock
+    try:
+        return MixtralForCausalLM(config).eval()
+    finally:
+        mixtral_modeling.MixtralSparseMoeBlock = current_moe_block
+
 
 def _assert_unfused_expert_module(experts):
     assert hasattr(experts, "0")
@@ -409,6 +453,87 @@ def test_mixtral():
     assert not converted
 
     _assert_unfused_expert_module(model.model.layers[0].mlp.experts)
+
+
+def test_mixtral_checkpoint_mapping_splits_fused_experts():
+    from defuser.defuser import get_checkpoint_conversion_mapping
+
+    mapping = get_checkpoint_conversion_mapping("mixtral")
+    gate_up_converter = next(
+        item
+        for item in mapping
+        if isinstance(item, WeightConverter) and item.source_patterns == [".experts.gate_up_proj"]
+    )
+
+    assert isinstance(gate_up_converter.operations[0], SplitFusedExpertGateUpProj)
+    assert gate_up_converter.target_patterns == [
+        ".experts.*.gate_proj.weight",
+        ".experts.*.up_proj.weight",
+    ]
+
+    fused_gate_up = torch.arange(4 * 6 * 8, dtype=torch.float32).reshape(4, 6, 8)
+    split = gate_up_converter.operations[0].convert(
+        {".experts.gate_up_proj": fused_gate_up},
+        gate_up_converter.source_patterns,
+        gate_up_converter.target_patterns,
+    )
+
+    torch.testing.assert_close(split[".experts.0.gate_proj.weight"], fused_gate_up[0, :3])
+    torch.testing.assert_close(split[".experts.0.up_proj.weight"], fused_gate_up[0, 3:])
+    torch.testing.assert_close(split[".experts.3.gate_proj.weight"], fused_gate_up[3, :3])
+    torch.testing.assert_close(split[".experts.3.up_proj.weight"], fused_gate_up[3, 3:])
+
+
+def test_mixtral_from_pretrained_loads_fused_checkpoint_into_defused_model(tmp_path):
+    config = _tiny_mixtral_config()
+    source_model = _create_original_mixtral_source_model(config)
+    source_state = source_model.state_dict()
+
+    input_ids = torch.tensor([[1, 2, 3, 4]], dtype=torch.long)
+    with torch.no_grad():
+        expected_logits = source_model(input_ids=input_ids).logits
+
+    _write_single_safetensors_checkpoint(tmp_path, source_state, config)
+
+    replace_fused_blocks("mixtral")
+
+    loaded = MixtralForCausalLM.from_pretrained(tmp_path).eval()
+    assert isinstance(loaded.model.layers[0].mlp, LinearMixtralSparseMoeBlock)
+
+    expert0 = loaded.model.layers[0].mlp.experts[0]
+    fused_gate_up = source_state["model.layers.0.mlp.experts.gate_up_proj"][0]
+    fused_down = source_state["model.layers.0.mlp.experts.down_proj"][0]
+
+    torch.testing.assert_close(expert0.gate_proj.weight, fused_gate_up[: config.intermediate_size])
+    torch.testing.assert_close(expert0.up_proj.weight, fused_gate_up[config.intermediate_size :])
+    torch.testing.assert_close(expert0.down_proj.weight, fused_down)
+
+    with torch.no_grad():
+        actual_logits = loaded(input_ids=input_ids).logits
+
+    torch.testing.assert_close(actual_logits, expected_logits)
+
+
+def test_mixtral_from_pretrained_loads_legacy_serialized_checkpoint(tmp_path):
+    config = _tiny_mixtral_config()
+    source_model = _create_original_mixtral_source_model(config)
+    source_state = source_model.state_dict()
+
+    input_ids = torch.tensor([[1, 2, 3, 4]], dtype=torch.long)
+    with torch.no_grad():
+        expected_logits = source_model(input_ids=input_ids).logits
+
+    _write_single_safetensors_checkpoint(tmp_path, _build_legacy_mixtral_state_dict(source_state), config)
+
+    replace_fused_blocks("mixtral")
+
+    loaded = MixtralForCausalLM.from_pretrained(tmp_path).eval()
+    assert isinstance(loaded.model.layers[0].mlp, LinearMixtralSparseMoeBlock)
+
+    with torch.no_grad():
+        actual_logits = loaded(input_ids=input_ids).logits
+
+    torch.testing.assert_close(actual_logits, expected_logits)
 
 
 def test_glm4_moe():

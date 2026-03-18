@@ -4,9 +4,9 @@
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 from enum import Enum
 
-from transformers.core_model_loading import WeightConverter
+from transformers.core_model_loading import SplitModulelist, WeightConverter, WeightRenaming
 
-from defuser.checkpoint_ops import OwnedChunk
+from defuser.checkpoint_ops import OwnedChunk, SplitFusedExpertGateUpProj
 
 
 class PATCH(str, Enum):
@@ -21,6 +21,25 @@ MODEL_CONFIG = {
                 "transformers.models.mixtral.modeling_mixtral.MixtralSparseMoeBlock",
                 "defuser.modeling.unfused_moe.mixtral.LinearMixtralSparseMoeBlock",
             )
+        ],
+        "checkpoint_mapping": [
+            WeightRenaming(".block_sparse_moe.", ".mlp."),
+            WeightRenaming(r".experts.(\d+).w1.weight", r".experts.\1.gate_proj.weight"),
+            WeightRenaming(r".experts.(\d+).w2.weight", r".experts.\1.down_proj.weight"),
+            WeightRenaming(r".experts.(\d+).w3.weight", r".experts.\1.up_proj.weight"),
+            WeightConverter(
+                source_patterns=".experts.gate_up_proj",
+                target_patterns=[
+                    ".experts.*.gate_proj.weight",
+                    ".experts.*.up_proj.weight",
+                ],
+                operations=[SplitFusedExpertGateUpProj()],
+            ),
+            WeightConverter(
+                source_patterns=".experts.down_proj",
+                target_patterns=".experts.*.down_proj.weight",
+                operations=[SplitModulelist(dim=0)],
+            ),
         ],
     },
     "qwen2_moe": {
