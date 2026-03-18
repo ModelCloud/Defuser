@@ -10,14 +10,14 @@ from torch.nn import functional as F
 class LinearQwen3NextSparseMoeBlock(nn.Module):
     def __init__(self, config):
         super().__init__()
-        from transformers.models.qwen3_next.modeling_qwen3_next import Qwen3NextMLP
+        from transformers.models.qwen3_next.modeling_qwen3_next import Qwen3NextMLP, Qwen3NextTopKRouter
 
         self.num_experts = config.num_experts
         self.top_k = config.num_experts_per_tok
         self.norm_topk_prob = config.norm_topk_prob
 
-        # gating
-        self.gate = nn.Linear(config.hidden_size, config.num_experts, bias=False)
+        # Reuse the upstream router module so `output_router_logits` hooks still attach.
+        self.gate = Qwen3NextTopKRouter(config)
         self.experts = nn.ModuleList(
             [Qwen3NextMLP(config, intermediate_size=config.moe_intermediate_size) for _ in range(self.num_experts)]
         )
@@ -29,14 +29,7 @@ class LinearQwen3NextSparseMoeBlock(nn.Module):
         """ """
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
-        # router_logits: (batch * sequence_length, n_experts)
-        router_logits = self.gate(hidden_states)
-
-        routing_weights = F.softmax(router_logits, dim=1, dtype=torch.float)
-        routing_weights, selected_experts = torch.topk(routing_weights, self.top_k, dim=-1)
-        if self.norm_topk_prob:
-            routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
-        # we cast back to the input dtype
+        _, routing_weights, selected_experts = self.gate(hidden_states)
         routing_weights = routing_weights.to(hidden_states.dtype)
 
         final_hidden_states = torch.zeros(
@@ -69,4 +62,4 @@ class LinearQwen3NextSparseMoeBlock(nn.Module):
         final_hidden_states = final_hidden_states + shared_expert_output
 
         final_hidden_states = final_hidden_states.reshape(batch_size, sequence_length, hidden_dim)
-        return final_hidden_states, router_logits
+        return final_hidden_states
