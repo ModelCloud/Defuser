@@ -81,6 +81,7 @@ MODEL_CONFIG = {
                 "defuser.modeling.glm4v.LinearGlm4vTextMLP",
             )
         ],
+        # Split HF checkpoints that still store `gate_up_proj` as one fused tensor.
         "checkpoint_mapping": [
             WeightConverter(
                 source_patterns="mlp.gate_up_proj.weight",

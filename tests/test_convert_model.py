@@ -407,3 +407,24 @@ def test_glm4v_checkpoint_mapping_splits_gate_up_proj():
 
     torch.testing.assert_close(split["mlp.gate_proj.weight"], fused[:3])
     torch.testing.assert_close(split["mlp.up_proj.weight"], fused[3:])
+
+
+def test_glm4v_split_forward_matches_fused_math():
+    from defuser.modeling.glm4v import LinearGlm4vTextMLP
+
+    config = SimpleNamespace(hidden_size=8, intermediate_size=6, hidden_act="silu")
+    fused_gate_up = torch.randn(2 * config.intermediate_size, config.hidden_size, dtype=torch.float32)
+    down_proj = torch.randn(config.hidden_size, config.intermediate_size, dtype=torch.float32)
+    hidden_states = torch.randn(3, config.hidden_size, dtype=torch.float32)
+
+    mlp = LinearGlm4vTextMLP(config)
+    with torch.no_grad():
+        mlp.gate_proj.weight.copy_(fused_gate_up[: config.intermediate_size])
+        mlp.up_proj.weight.copy_(fused_gate_up[config.intermediate_size :])
+        mlp.down_proj.weight.copy_(down_proj)
+
+    fused_gate, fused_up = (hidden_states @ fused_gate_up.transpose(0, 1)).chunk(2, dim=-1)
+    expected = (torch.nn.functional.silu(fused_gate) * fused_up) @ down_proj.transpose(0, 1)
+
+    # The split module should exactly reproduce the original fused MLP math.
+    torch.testing.assert_close(mlp(hidden_states), expected)
