@@ -20,6 +20,7 @@ from transformers.models.qwen3_next.modeling_qwen3_next import Qwen3NextConfig, 
 from transformers.models.qwen3_omni_moe.configuration_qwen3_omni_moe import Qwen3OmniMoeConfig
 from transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe import Qwen3OmniMoeForConditionalGeneration
 from transformers.models.gpt_oss.modeling_gpt_oss import GptOssConfig, GptOssForCausalLM
+from transformers.models.llama4.modeling_llama4 import Llama4Config, Llama4ForConditionalGeneration
 
 from defuser import convert_model, replace_fused_blocks
 from defuser.checkpoint_ops import OwnedChunk
@@ -189,6 +190,34 @@ def _tiny_gpt_oss_config():
         pad_token_id=0,
         bos_token_id=1,
         eos_token_id=2,
+    )
+
+
+def _tiny_llama4_config():
+    return Llama4Config(
+        text_config={
+            "vocab_size": 128,
+            "hidden_size": 64,
+            "num_hidden_layers": 1,
+            "num_attention_heads": 4,
+            "num_key_value_heads": 1,
+            "head_dim": 16,
+            "intermediate_size": 128,
+            "hidden_act": "silu",
+            "pad_token_id": 0,
+            "bos_token_id": 1,
+            "eos_token_id": 2,
+        },
+        vision_config={
+            "hidden_size": 64,
+            "intermediate_size": 128,
+            "num_hidden_layers": 1,
+            "num_attention_heads": 4,
+            "num_channels": 3,
+            "image_size": 16,
+            "patch_size": 4,
+            "out_hidden_size": 64,
+        },
     )
 
 def _assert_unfused_expert_module(experts):
@@ -478,6 +507,41 @@ def test_gpt_oss():
     expert0 = getattr(experts, "0")
 
     materialize_model(model.model.layers[0])
+
+    torch.testing.assert_close(expert0.gate_proj.weight, expected_gate)
+    torch.testing.assert_close(expert0.up_proj.weight, expected_up)
+    torch.testing.assert_close(expert0.down_proj.weight, expected_down)
+
+def test_llama4():
+    from transformers.models.llama4.modeling_llama4 import Llama4TextMoe
+
+    model = Llama4ForConditionalGeneration(_tiny_llama4_config())
+    assert model.config.model_type == "llama4"
+
+    original_moe_block = model.language_model.model.layers[0].feed_forward
+    assert isinstance(original_moe_block, Llama4TextMoe)
+
+    experts = original_moe_block.experts
+
+    gate_up = experts.gate_up_proj
+    down = experts.down_proj
+
+    expert_dim = model.config.text_config.intermediate_size
+
+    expected_gate = gate_up[0, :, :expert_dim].clone().T
+    expected_up = gate_up[0, :, expert_dim:].clone().T
+    expected_down = down[0].clone().T
+
+    converted = convert_model(model, cleanup_original=False, max_layers=1)
+    assert converted
+
+    moe_block = model.language_model.model.layers[0].feed_forward
+    experts = moe_block.experts
+
+    _assert_unfused_expert_module(experts)
+    expert0 = getattr(experts, "0")
+
+    materialize_model(model.language_model.model.layers[0])
 
     torch.testing.assert_close(expert0.gate_proj.weight, expected_gate)
     torch.testing.assert_close(expert0.up_proj.weight, expected_up)
