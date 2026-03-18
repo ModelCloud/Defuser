@@ -43,7 +43,7 @@ import defuser.defuser as defuser_api
 import defuser.utils.hf as hf_utils
 from defuser import convert_model, replace_fused_blocks
 from defuser.checkpoint_ops import OwnedChunk, SplitFusedExpertGateUpProj
-from defuser.model_registry import MODEL_CONFIG
+from defuser.model_registry import MODEL_CONFIG, PATCH
 from defuser.modeling.replace_modules import ReplacementModuleBase, apply_replacements, materialize_model
 from defuser.modeling.unfused_moe.glm4_moe import LinearGlm4MoeMoE
 from defuser.modeling.unfused_moe.mixtral import LinearMixtralSparseMoeBlock
@@ -466,6 +466,54 @@ def test_apply_replacements_runs_custom_replacements():
 
 def test_replace_fused_blocks_returns_false_for_unregistered_model():
     assert replace_fused_blocks("unsupported_model_type") is False
+
+
+def test_replace_fused_blocks_applies_all_registered_replacements():
+    import sys
+    import types
+
+    orig1 = types.ModuleType("dummy_orig1")
+    orig2 = types.ModuleType("dummy_orig2")
+    custom1 = types.ModuleType("dummy_custom1")
+    custom2 = types.ModuleType("dummy_custom2")
+
+    class OriginalOne:
+        pass
+
+    class OriginalTwo:
+        pass
+
+    class ReplacementOne:
+        pass
+
+    class ReplacementTwo:
+        pass
+
+    orig1.OriginalOne = OriginalOne
+    orig2.OriginalTwo = OriginalTwo
+    custom1.ReplacementOne = ReplacementOne
+    custom2.ReplacementTwo = ReplacementTwo
+
+    sys.modules["dummy_orig1"] = orig1
+    sys.modules["dummy_orig2"] = orig2
+    sys.modules["dummy_custom1"] = custom1
+    sys.modules["dummy_custom2"] = custom2
+    MODEL_CONFIG["dummy_multi_patch"] = {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+        PATCH.REPLACE_MODULE: [
+            ("dummy_orig1.OriginalOne", "dummy_custom1.ReplacementOne"),
+            ("dummy_orig2.OriginalTwo", "dummy_custom2.ReplacementTwo"),
+        ],
+    }
+
+    try:
+        assert replace_fused_blocks("dummy_multi_patch") is True
+        assert orig1.OriginalOne is ReplacementOne
+        assert orig2.OriginalTwo is ReplacementTwo
+    finally:
+        MODEL_CONFIG.pop("dummy_multi_patch", None)
+        for name in ("dummy_orig1", "dummy_orig2", "dummy_custom1", "dummy_custom2"):
+            sys.modules.pop(name, None)
 
 
 def test_model_registry_requires_transformers_5_3_or_newer():
