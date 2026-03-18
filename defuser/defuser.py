@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 import importlib
+from copy import deepcopy
 
 from torch import nn
 
@@ -23,7 +24,7 @@ def get_checkpoint_conversion_mapping(model_type):
 
     cfg = MODEL_CONFIG.get(model_type)
     if cfg:
-        return cfg.get("checkpoint_mapping", [])
+        return deepcopy(cfg.get("checkpoint_mapping", []))
 
     from transformers import conversion_mapping
 
