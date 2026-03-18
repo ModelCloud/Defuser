@@ -357,11 +357,12 @@ def _unfuse_single_projection(
 ) -> list | None:
     """Unfuse a single projection from 3D Parameter to a list of Linear layers.
 
-    Optimized to minimize device allocations and copies:
+    Optimized to keep peak device memory low while preserving the module's
+    original device placement:
     - Moves the full 3D tensor to CPU in a single transfer
     - Performs batch transpose on CPU if needed
-    - Creates Linear shells on meta device (no allocation)
-    - Directly assigns weight slices as Parameters (zero-copy on CPU)
+    - Releases the original fused parameter before allocating defused linears
+    - Re-materializes each expert linear back onto ``target_device``
 
     Args:
         module: The experts module
@@ -391,6 +392,7 @@ def _unfuse_single_projection(
 
     source_device = param.device
     is_meta = source_device.type == "meta"
+    weight_requires_grad = param.requires_grad
 
     # Prepare weight slices on CPU in batch (single D2H transfer + batch transpose)
     if not is_meta:
@@ -413,6 +415,19 @@ def _unfuse_single_projection(
             if not bias_cpu.is_contiguous():
                 bias_cpu = bias_cpu.contiguous()
             bias_slices = bias_cpu.unbind(0)
+            bias_requires_grad = bias_param.requires_grad
+
+        # Drop the original fused parameter before allocating the defused
+        # per-expert linears back on the original device.
+        try:
+            setattr(module, proj_name, to_meta(param))
+            param = None
+            if has_bias:
+                setattr(module, bias_name, to_meta(bias_param))
+                bias_param = None
+            if DEBUG_ON: logger.debug(f"Released memory for {proj_name} using to_meta()")
+        except Exception:
+            pass
 
     # Create Linear shells on meta device (no memory allocation)
     linears = []
@@ -421,22 +436,17 @@ def _unfuse_single_projection(
         linear = nn.Linear(in_features, out_features, bias=has_bias, dtype=dtype, device="meta")
 
         if not is_meta:
-            # Direct parameter assignment — no copy, just references the CPU tensor slice
-            linear.weight = nn.Parameter(weight_slices[i])
+            weight = weight_slices[i]
+            if target_device.type != "cpu":
+                weight = weight.to(device=target_device, dtype=dtype)
+            linear.weight = nn.Parameter(weight, requires_grad=weight_requires_grad)
             if has_bias:
-                linear.bias = nn.Parameter(bias_slices[i])
+                bias = bias_slices[i]
+                if target_device.type != "cpu":
+                    bias = bias.to(device=target_device, dtype=bias.dtype)
+                linear.bias = nn.Parameter(bias, requires_grad=bias_requires_grad)
 
         linears.append(linear)
-
-    # Release original parameter memory
-    if not is_meta:
-        try:
-            setattr(module, proj_name, to_meta(param))
-            if has_bias:
-                setattr(module, bias_name, to_meta(bias_param))
-            if DEBUG_ON: logger.debug(f"Released memory for {proj_name} using to_meta()")
-        except Exception:
-            pass
 
     return linears
 

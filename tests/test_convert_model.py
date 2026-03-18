@@ -4,6 +4,7 @@
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 from types import SimpleNamespace
 
+import pytest
 import torch
 from safetensors.torch import save_file
 from torch import nn
@@ -547,6 +548,25 @@ def test_qwen3_5_moe():
     torch.testing.assert_close(expert0.gate_proj.weight, expected_gate)
     torch.testing.assert_close(expert0.up_proj.weight, expected_up)
     torch.testing.assert_close(expert0.down_proj.weight, expected_down)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_qwen3_5_moe_runtime_defusion_preserves_cuda_device():
+    model = Qwen3_5MoeForConditionalGeneration(_tiny_qwen3_5_moe_config()).cuda().eval()
+
+    converted = convert_model(model, cleanup_original=False, max_layers=1)
+    assert converted
+
+    expert0 = getattr(model.model.language_model.layers[0].mlp.experts, "0")
+    assert expert0.gate_proj.weight.device.type == "cuda"
+    assert expert0.up_proj.weight.device.type == "cuda"
+    assert expert0.down_proj.weight.device.type == "cuda"
+
+    hidden_states = torch.randn(2, model.config.text_config.hidden_size, device="cuda")
+    with torch.no_grad():
+        output = expert0.gate_proj(hidden_states)
+
+    assert output.device.type == "cuda"
 
 
 def test_mixtral():
