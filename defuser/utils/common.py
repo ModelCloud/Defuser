@@ -8,12 +8,14 @@ import os
 
 from functools import lru_cache
 import re
+from packaging import version
 
 
 # Match module paths like "...layers.0..." and capture the numeric layer index.
 _LAYER_NAME_RE = re.compile(r"(?:^|\.)layers\.(\d+)(?:\.|$)")
 
 TRUTHFUL = {"1", "true", "yes", "on", "y"}
+MIN_SUPPORTED_TRANSFORMERS_VERSION = "5.3.0"
 
 
 def env_flag(name: str, default: str | bool | None = "0") -> bool:
@@ -31,10 +33,31 @@ def env_flag(name: str, default: str | bool | None = "0") -> bool:
 
 @lru_cache(None)
 def is_transformers_version_greater_or_equal_5():
+    """Cache the coarse ``transformers>=5`` capability check used by fast paths."""
     import transformers
-    from packaging import version
 
     return version.parse(transformers.__version__) >= version.parse("5.0.0")
+
+
+def is_supported_transformers_version() -> bool:
+    """Return whether the installed transformers version is supported by Defuser's public API."""
+    import transformers
+
+    return version.parse(transformers.__version__) >= version.parse(MIN_SUPPORTED_TRANSFORMERS_VERSION)
+
+
+def warn_if_public_api_transformers_unsupported(api_name: str, logger) -> bool:
+    """Emit a single consistent warning when the runtime transformers version is too old."""
+    import transformers
+
+    if is_supported_transformers_version():
+        return False
+
+    logger.warning(
+        f"Defuser public API `{api_name}` requires transformers>={MIN_SUPPORTED_TRANSFORMERS_VERSION}. "
+        f"Current version is {transformers.__version__}. This call is unsupported and will be skipped."
+    )
+    return True
 
 
 def is_within_max_layers(module_name: str, max_layers: int | None) -> bool:

@@ -6,7 +6,6 @@
 # Adapted from intel/auto-round
 # at https://github.com/intel/auto-round/blob/main/auto_round/modeling/unfused_moe/__init__.py
 
-import importlib
 import os
 from typing import Final
 
@@ -17,6 +16,7 @@ from packaging import version
 from transformers import AutoConfig
 
 from defuser.model_registry import MODEL_CONFIG
+from defuser.utils.common import warn_if_public_api_transformers_unsupported
 
 logger = LogBar(__name__)
 
@@ -47,6 +47,7 @@ def modelscope_requested() -> bool:
 
 
 def get_file_path_via_model_name(model_or_path: str, file_name):
+    """Resolve one HF or ModelScope file path from either a repo id or local directory."""
     from huggingface_hub import hf_hub_download
 
     # 1) local folder
@@ -73,6 +74,10 @@ def get_file_path_via_model_name(model_or_path: str, file_name):
 
 
 def pre_check_config(model_name: str | torch.nn.Module):
+    """Quickly decide whether a model likely still needs Defuser's runtime conversion."""
+    if warn_if_public_api_transformers_unsupported("pre_check_config()", logger):
+        return False
+
     if isinstance(model_name, str):
         config = AutoConfig.from_pretrained(model_name)
     elif isinstance(model_name, torch.nn.Module):
@@ -97,6 +102,7 @@ def pre_check_config(model_name: str | torch.nn.Module):
 
             with open(file_path, "r") as f:
                 index_data = json.load(f)
+            # A fused gate/up tensor in the weight map means runtime defusion is still needed.
             model_keys = list(index_data.get("weight_map", {}).keys())
             for key in model_keys:
                 if "gate_up_proj" in key:

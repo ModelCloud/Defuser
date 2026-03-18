@@ -7,16 +7,17 @@ from enum import Enum
 from transformers.core_model_loading import WeightConverter, WeightRenaming
 
 from defuser.checkpoint_ops import OwnedChunk, SplitFusedExpertDownProj, SplitFusedExpertGateUpProj
+from defuser.utils.common import MIN_SUPPORTED_TRANSFORMERS_VERSION
 
 
 class PATCH(str, Enum):
     REPLACE_MODULE = "replace_module"
-    DEFUSE = "defuse"
+    EXPERTS_DEFUSE = "experts_defuse"
 
 
 MODEL_CONFIG = {
     "mixtral": {
-        "min_transformers_version": "5.0.0",
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
         PATCH.REPLACE_MODULE: [
             (
                 "transformers.models.mixtral.modeling_mixtral.MixtralSparseMoeBlock",
@@ -44,7 +45,7 @@ MODEL_CONFIG = {
         ],
     },
     "qwen2_moe": {
-        "min_transformers_version": "5.0.0",
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
         PATCH.REPLACE_MODULE: [
             (
                 "transformers.models.qwen2_moe.modeling_qwen2_moe.Qwen2MoeSparseMoeBlock",
@@ -53,7 +54,7 @@ MODEL_CONFIG = {
         ],
     },
     "qwen3_moe": {
-        "min_transformers_version": "5.0.0",
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
         # structure path only replaces modeling structure
         PATCH.REPLACE_MODULE: [
             (
@@ -63,13 +64,13 @@ MODEL_CONFIG = {
         ],
     },
     "qwen3_5_moe": {
-        "min_transformers_version": "5.2.0",
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
     "qwen3_5_moe_text": {
-        "min_transformers_version": "5.2.0",
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
     "qwen3_next": {
-        "min_transformers_version": "5.0.0",
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
         PATCH.REPLACE_MODULE: [
             (
                 "transformers.models.qwen3_next.modeling_qwen3_next.Qwen3NextSparseMoeBlock",
@@ -78,7 +79,7 @@ MODEL_CONFIG = {
         ],
     },
     "qwen3_omni_moe": {
-        "min_transformers_version": "5.0.0",
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
         PATCH.REPLACE_MODULE: [
             (
                 "transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe.Qwen3OmniMoeThinkerTextSparseMoeBlock",
@@ -87,7 +88,7 @@ MODEL_CONFIG = {
         ],
     },
     "glm4_moe": {
-        "min_transformers_version": "5.0.0",
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
         PATCH.REPLACE_MODULE: [
             (
                 "transformers.models.glm4_moe.modeling_glm4_moe.Glm4MoeMoE",
@@ -96,7 +97,7 @@ MODEL_CONFIG = {
         ],
     },
     "glm4v": {
-        "min_transformers_version": "5.0.0",
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
         PATCH.REPLACE_MODULE: [
             (
                 "transformers.models.glm4v.modeling_glm4v.Glm4vTextMLP",
@@ -116,10 +117,15 @@ MODEL_CONFIG = {
         ],
     },
     "gpt_oss": {
-        # "min_transformers_version": "", # When `gpt_oss` was added to `transformers`, it was already implemented as "fused experts."
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
     "llama4": {
-        # "min_transformers_version": "", # When `llama4` was added to `transformers`, it was already implemented as "fused experts."
-        PATCH.DEFUSE: "defuser.modeling.fused_moe.llama4",
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+        PATCH.EXPERTS_DEFUSE: [
+            {
+                "module_class": "transformers.models.llama4.modeling_llama4.Llama4TextExperts",
+                "forward_impl": "batched_input",
+            }
+        ],
     },
 }

@@ -10,6 +10,11 @@ from torch import nn
 from defuser.model_registry import MODEL_CONFIG, PATCH
 from defuser.modeling.model_patches import apply_model_class_patches, apply_model_patches
 from defuser.modeling.update_module import update_module
+from defuser.utils.common import (
+    MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    is_supported_transformers_version,
+    warn_if_public_api_transformers_unsupported,
+)
 from packaging import version
 import transformers
 from logbar import LogBar
@@ -17,6 +22,7 @@ from logbar import LogBar
 logger = LogBar(__name__)
 
 def get_checkpoint_conversion_mapping(model_type):
+    """Return Defuser's checkpoint remapping rules for one registered model type."""
     from transformers import conversion_mapping
 
     if not hasattr(conversion_mapping, "orig_get_checkpoint_conversion_mapping"):
@@ -36,6 +42,10 @@ class PatchError(Exception):
 
 
 def replace_fused_blocks(model_type: str) -> bool:
+    """Patch supported HF model classes so future loads instantiate defused blocks."""
+    if warn_if_public_api_transformers_unsupported("replace_fused_blocks()", logger):
+        return False
+
     apply_model_class_patches(model_type)
 
     cfg = MODEL_CONFIG.get(model_type)
@@ -60,7 +70,7 @@ def replace_fused_blocks(model_type: str) -> bool:
             custom_class = getattr(custom_module, custom_class_name)
             setattr(orig_module, orig_class_name, custom_class)
 
-            if version.parse(transformers.__version__) >= version.parse("5.0.0"):
+            if version.parse(transformers.__version__) >= version.parse(MIN_SUPPORTED_TRANSFORMERS_VERSION):
                 from transformers import conversion_mapping
 
                 if not hasattr(conversion_mapping, "orig_get_checkpoint_conversion_mapping"):
@@ -89,6 +99,9 @@ def check_model_compatibility(model: nn.Module) -> bool:
     if model_type not in MODEL_CONFIG:
         return False
 
+    if not is_supported_transformers_version():
+        return False
+
     min_ver = MODEL_CONFIG[model_type].get("min_transformers_version")
     current_ver = version.parse(transformers.__version__)
     if min_ver and current_ver < version.parse(min_ver):
@@ -106,6 +119,10 @@ def convert_model(
         cleanup_original: bool = False,
         max_layers: int | None = None,
 ) -> bool:
+    """Convert one loaded model in place from fused experts to defused modules."""
+    if warn_if_public_api_transformers_unsupported("convert_model()", logger):
+        return False
+
     if max_layers is not None and max_layers < 1:
         raise ValueError("max_layers must be >= 1 when provided")
 

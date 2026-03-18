@@ -24,6 +24,7 @@ class SplitFusedExpertGateUpProj(ConversionOps):
 
     @staticmethod
     def _expert_target(pattern: str, expert_idx: int) -> str:
+        """Expand one target pattern into the per-expert key for ``expert_idx``."""
         if "*" in pattern:
             return pattern.replace("*", str(expert_idx))
         return pattern.replace(".0.", f".{expert_idx}.", 1)
@@ -32,6 +33,7 @@ class SplitFusedExpertGateUpProj(ConversionOps):
     def convert(
         self, input_dict: dict[str, torch.Tensor], source_patterns: list[str], target_patterns: list[str], **kwargs
     ) -> dict[str, torch.Tensor]:
+        """Split one fused gate/up tensor into cloned per-expert gate and up tensors."""
         if len(target_patterns) != 2:
             raise ValueError("SplitFusedExpertGateUpProj expects exactly two target patterns.")
 
@@ -50,6 +52,7 @@ class SplitFusedExpertGateUpProj(ConversionOps):
 
     @property
     def reverse_op(self) -> ConversionOps:
+        """Return the inverse merge op used when writing fused checkpoints."""
         return MergeSplitExpertGateUpProj()
 
 
@@ -66,6 +69,7 @@ class MergeSplitExpertGateUpProj(ConversionOps):
     def convert(
         self, input_dict: dict[str, list[torch.Tensor]], source_patterns: list[str], target_patterns: list[str], **kwargs
     ) -> dict[str, torch.Tensor]:
+        """Merge per-expert gate/up tensors back into one fused expert tensor."""
         if len(source_patterns) != 2:
             raise ValueError("MergeSplitExpertGateUpProj expects exactly two source patterns.")
         if len(target_patterns) != 1:
@@ -102,6 +106,7 @@ class SplitFusedExpertDownProj(ConversionOps):
 
     @staticmethod
     def _expert_target(pattern: str, expert_idx: int) -> str:
+        """Expand one target pattern into the per-expert key for ``expert_idx``."""
         if "*" in pattern:
             return pattern.replace("*", str(expert_idx))
         return pattern.replace(".0.", f".{expert_idx}.", 1)
@@ -110,6 +115,7 @@ class SplitFusedExpertDownProj(ConversionOps):
     def convert(
         self, input_dict: dict[str, torch.Tensor], source_patterns: list[str], target_patterns: list[str], **kwargs
     ) -> dict[str, torch.Tensor]:
+        """Split one fused expert down projection into cloned per-expert tensors."""
         if len(target_patterns) != 1:
             raise ValueError("SplitFusedExpertDownProj expects a single target pattern.")
 
@@ -126,4 +132,5 @@ class SplitFusedExpertDownProj(ConversionOps):
 
     @property
     def reverse_op(self) -> ConversionOps:
+        """Return the inverse merge op used when writing fused checkpoints."""
         return MergeModulelist(dim=self.expert_dim)

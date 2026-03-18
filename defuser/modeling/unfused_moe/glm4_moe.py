@@ -12,6 +12,7 @@ class LinearGlm4MoeMoE(nn.Module):
     """
 
     def __init__(self, config):
+        """Build a GLM4 MoE block that exposes one explicit module per routed expert."""
         super().__init__()
         from transformers.models.glm4_moe.modeling_glm4_moe import Glm4MoeMLP, Glm4MoeTopkRouter
 
@@ -34,6 +35,7 @@ class LinearGlm4MoeMoE(nn.Module):
         self.top_k = config.num_experts_per_tok
 
     def route_tokens_to_experts(self, router_logits: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Replicate GLM4's grouped expert selection and top-k weight normalization."""
         # Keep the expert selection identical to the upstream GLM4 MoE router.
         router_logits = router_logits.sigmoid()
         router_logits_for_choice = router_logits + self.gate.e_score_correction_bias
@@ -59,10 +61,7 @@ class LinearGlm4MoeMoE(nn.Module):
         return topk_indices, topk_weights
 
     def moe(self, hidden_states: torch.Tensor, topk_indices: torch.Tensor, topk_weights: torch.Tensor):
-        r"""
-        CALL FOR CONTRIBUTION! I don't have time to optimise this right now, but expert weights need to be fused
-        to not have to do a loop here (deepseek has 256 experts soooo yeah).
-        """
+        """Run the routed experts one by one and accumulate their weighted outputs."""
         final_hidden_states = torch.zeros_like(hidden_states, dtype=topk_weights.dtype)
         expert_mask = torch.nn.functional.one_hot(topk_indices, num_classes=len(self.experts))
         expert_mask = expert_mask.permute(2, 0, 1)
@@ -85,6 +84,7 @@ class LinearGlm4MoeMoE(nn.Module):
         return final_hidden_states.type(hidden_states.dtype)
 
     def forward(self, hidden_states):
+        """Apply routed experts plus the shared expert branch, matching upstream GLM4 MoE."""
         residuals = hidden_states
         orig_shape = hidden_states.shape
         router_logits = self.gate(hidden_states)

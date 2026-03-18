@@ -11,6 +11,8 @@ import torch.nn as nn
 
 
 class LinearQwen3MoeSparseMoeBlock(nn.Module):
+    """Qwen3 MoE block rewritten to expose one ``nn.Module`` per expert."""
+
     def __init__(self, config):
         super().__init__()
         from transformers.models.qwen3_moe.modeling_qwen3_moe import Qwen3MoeMLP, Qwen3MoeTopKRouter
@@ -26,7 +28,7 @@ class LinearQwen3MoeSparseMoeBlock(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        """ """
+        """Route tokens exactly like HF Qwen3 MoE, then run explicit expert modules."""
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
         _, routing_weights, selected_experts = self.gate(hidden_states)
