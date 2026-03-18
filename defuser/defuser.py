@@ -29,10 +29,8 @@ def get_checkpoint_conversion_mapping(model_type):
         conversion_mapping.orig_get_checkpoint_conversion_mapping = conversion_mapping.get_checkpoint_conversion_mapping
 
     cfg = MODEL_CONFIG.get(model_type)
-    if cfg:
-        return deepcopy(cfg.get("checkpoint_mapping", []))
-
-    from transformers import conversion_mapping
+    if cfg and "checkpoint_mapping" in cfg:
+        return deepcopy(cfg["checkpoint_mapping"])
 
     return conversion_mapping.orig_get_checkpoint_conversion_mapping(model_type)
 
@@ -52,6 +50,7 @@ def replace_fused_blocks(model_type: str) -> bool:
     if cfg is None:
         return False
 
+    patched_any = False
     for orig_path, custom_path in cfg.get(PATCH.REPLACE_MODULE, []):
         orig_module_path, orig_class_name = orig_path.rsplit(".", 1)
         custom_module_path, custom_class_name = custom_path.rsplit(".", 1)
@@ -81,7 +80,7 @@ def replace_fused_blocks(model_type: str) -> bool:
                 conversion_mapping.get_checkpoint_conversion_mapping = get_checkpoint_conversion_mapping
                 transformers.modeling_utils.get_checkpoint_conversion_mapping = get_checkpoint_conversion_mapping
             logger.info(f"Patched {orig_path} -> {custom_path}")
-            return True
+            patched_any = True
 
         except Exception as e:
             if isinstance(e, PatchError):
@@ -89,7 +88,7 @@ def replace_fused_blocks(model_type: str) -> bool:
 
             logger.warning(f"Failed to patch {orig_path}: {e}")
             return False
-    return False
+    return patched_any
 
 
 def check_model_compatibility(model: nn.Module) -> bool:

@@ -4,6 +4,7 @@
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 from types import SimpleNamespace
 
+import pytest
 import torch
 from safetensors.torch import save_file
 from torch import nn
@@ -41,8 +42,8 @@ from transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe import (
 import defuser.defuser as defuser_api
 import defuser.utils.hf as hf_utils
 from defuser import convert_model, replace_fused_blocks
-from defuser.checkpoint_ops import OwnedChunk, SplitFusedExpertGateUpProj
-from defuser.model_registry import MODEL_CONFIG
+from defuser.checkpoint_ops import OwnedChunk, SplitFusedExpertDownProj, SplitFusedExpertGateUpProj
+from defuser.model_registry import MODEL_CONFIG, PATCH
 from defuser.modeling.replace_modules import ReplacementModuleBase, apply_replacements, materialize_model
 from defuser.modeling.unfused_moe.glm4_moe import LinearGlm4MoeMoE
 from defuser.modeling.unfused_moe.mixtral import LinearMixtralSparseMoeBlock
@@ -467,6 +468,54 @@ def test_replace_fused_blocks_returns_false_for_unregistered_model():
     assert replace_fused_blocks("unsupported_model_type") is False
 
 
+def test_replace_fused_blocks_applies_all_registered_replacements():
+    import sys
+    import types
+
+    orig1 = types.ModuleType("dummy_orig1")
+    orig2 = types.ModuleType("dummy_orig2")
+    custom1 = types.ModuleType("dummy_custom1")
+    custom2 = types.ModuleType("dummy_custom2")
+
+    class OriginalOne:
+        pass
+
+    class OriginalTwo:
+        pass
+
+    class ReplacementOne:
+        pass
+
+    class ReplacementTwo:
+        pass
+
+    orig1.OriginalOne = OriginalOne
+    orig2.OriginalTwo = OriginalTwo
+    custom1.ReplacementOne = ReplacementOne
+    custom2.ReplacementTwo = ReplacementTwo
+
+    sys.modules["dummy_orig1"] = orig1
+    sys.modules["dummy_orig2"] = orig2
+    sys.modules["dummy_custom1"] = custom1
+    sys.modules["dummy_custom2"] = custom2
+    MODEL_CONFIG["dummy_multi_patch"] = {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+        PATCH.REPLACE_MODULE: [
+            ("dummy_orig1.OriginalOne", "dummy_custom1.ReplacementOne"),
+            ("dummy_orig2.OriginalTwo", "dummy_custom2.ReplacementTwo"),
+        ],
+    }
+
+    try:
+        assert replace_fused_blocks("dummy_multi_patch") is True
+        assert orig1.OriginalOne is ReplacementOne
+        assert orig2.OriginalTwo is ReplacementTwo
+    finally:
+        MODEL_CONFIG.pop("dummy_multi_patch", None)
+        for name in ("dummy_orig1", "dummy_orig2", "dummy_custom1", "dummy_custom2"):
+            sys.modules.pop(name, None)
+
+
 def test_model_registry_requires_transformers_5_3_or_newer():
     assert {cfg["min_transformers_version"] for cfg in MODEL_CONFIG.values()} == {MIN_SUPPORTED_TRANSFORMERS_VERSION}
 
@@ -549,6 +598,25 @@ def test_qwen3_5_moe():
     torch.testing.assert_close(expert0.down_proj.weight, expected_down)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_qwen3_5_moe_runtime_defusion_preserves_cuda_device():
+    model = Qwen3_5MoeForConditionalGeneration(_tiny_qwen3_5_moe_config()).cuda().eval()
+
+    converted = convert_model(model, cleanup_original=False, max_layers=1)
+    assert converted
+
+    expert0 = getattr(model.model.language_model.layers[0].mlp.experts, "0")
+    assert expert0.gate_proj.weight.device.type == "cuda"
+    assert expert0.up_proj.weight.device.type == "cuda"
+    assert expert0.down_proj.weight.device.type == "cuda"
+
+    hidden_states = torch.randn(2, model.config.text_config.hidden_size, device="cuda")
+    with torch.no_grad():
+        output = expert0.gate_proj(hidden_states)
+
+    assert output.device.type == "cuda"
+
+
 def test_mixtral():
     model_type = "mixtral"
     replace_fused_blocks(model_type)
@@ -592,6 +660,46 @@ def test_mixtral_checkpoint_mapping_splits_fused_experts():
     torch.testing.assert_close(split[".experts.0.up_proj.weight"], fused_gate_up[0, 3:])
     torch.testing.assert_close(split[".experts.3.gate_proj.weight"], fused_gate_up[3, :3])
     torch.testing.assert_close(split[".experts.3.up_proj.weight"], fused_gate_up[3, 3:])
+    assert split[".experts.0.gate_proj.weight"].is_contiguous()
+    assert split[".experts.0.up_proj.weight"].is_contiguous()
+    assert split[".experts.0.gate_proj.weight"].untyped_storage().data_ptr() != fused_gate_up.untyped_storage().data_ptr()
+    assert split[".experts.0.up_proj.weight"].untyped_storage().data_ptr() != fused_gate_up.untyped_storage().data_ptr()
+
+
+def test_mixtral_checkpoint_mapping_splits_down_proj_into_owned_contiguous_tensors():
+    split_op = SplitFusedExpertDownProj()
+    fused_down = torch.arange(4 * 8 * 3, dtype=torch.float32).reshape(4, 8, 3)
+
+    split = split_op.convert(
+        {".experts.down_proj": fused_down},
+        [".experts.down_proj"],
+        [".experts.0.down_proj.weight"],
+    )
+
+    torch.testing.assert_close(split[".experts.0.down_proj.weight"], fused_down[0])
+    torch.testing.assert_close(split[".experts.3.down_proj.weight"], fused_down[3])
+    assert split[".experts.0.down_proj.weight"].is_contiguous()
+    assert split[".experts.3.down_proj.weight"].is_contiguous()
+    assert split[".experts.0.down_proj.weight"].untyped_storage().data_ptr() != fused_down.untyped_storage().data_ptr()
+    assert split[".experts.3.down_proj.weight"].untyped_storage().data_ptr() != fused_down.untyped_storage().data_ptr()
+
+
+def test_registered_models_without_custom_checkpoint_mapping_keep_transformers_fallback():
+    from transformers import conversion_mapping
+
+    upstream_get_mapping = getattr(
+        conversion_mapping,
+        "orig_get_checkpoint_conversion_mapping",
+        conversion_mapping.get_checkpoint_conversion_mapping,
+    )
+    upstream_mapping = upstream_get_mapping("qwen2_moe")
+
+    replace_fused_blocks("qwen2_moe")
+
+    patched_mapping = conversion_mapping.get_checkpoint_conversion_mapping("qwen2_moe")
+    assert len(patched_mapping) == len(upstream_mapping)
+    assert [item.source_patterns for item in patched_mapping] == [item.source_patterns for item in upstream_mapping]
+    assert [item.target_patterns for item in patched_mapping] == [item.target_patterns for item in upstream_mapping]
 
 
 def test_mixtral_from_pretrained_loads_fused_checkpoint_into_defused_model(tmp_path):
@@ -804,6 +912,10 @@ def test_glm4v_checkpoint_mapping_splits_gate_up_proj():
     torch.testing.assert_close(split["mlp.gate_proj.weight"], fused[:3])
     torch.testing.assert_close(split["mlp.up_proj.weight"], fused[3:])
     assert split["mlp.gate_proj.weight"].data_ptr() != split["mlp.up_proj.weight"].data_ptr()
+    assert split["mlp.gate_proj.weight"].is_contiguous()
+    assert split["mlp.up_proj.weight"].is_contiguous()
+    assert split["mlp.gate_proj.weight"].untyped_storage().data_ptr() != fused.untyped_storage().data_ptr()
+    assert split["mlp.up_proj.weight"].untyped_storage().data_ptr() != fused.untyped_storage().data_ptr()
 
 
 def test_glm4v_split_forward_matches_fused_math():

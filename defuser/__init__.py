@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 
-from defuser.utils.hf import env_flag
+from defuser.utils.common import env_flag
 
 DEBUG_ON = env_flag("DEBUG")
 
