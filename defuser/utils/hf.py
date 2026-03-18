@@ -16,26 +16,11 @@ from packaging import version
 from transformers import AutoConfig
 
 from defuser.model_registry import MODEL_CONFIG
-from defuser.utils.common import warn_if_public_api_transformers_unsupported
+from defuser.utils.common import env_flag, warn_if_public_api_transformers_unsupported
 
 logger = LogBar(__name__)
 
 _ENV_VAR: Final[str] = "GPTQMODEL_USE_MODELSCOPE"
-
-TRUTHFUL = {"1", "true", "yes", "on", "y"}
-
-
-def env_flag(name: str, default: str | bool | None = "0") -> bool:
-    """Return ``True`` when an env var is set to a truthy value."""
-
-    value = os.getenv(name)
-    if value is None:
-        if default is None:
-            return False
-        if isinstance(default, bool):
-            return default
-        value = default
-    return str(value).strip().lower() in TRUTHFUL
 
 
 def modelscope_requested() -> bool:

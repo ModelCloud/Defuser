@@ -8,6 +8,8 @@
 
 import torch
 
+from defuser.utils.device import unsupported_meta_device
+
 
 def _update_parameter(
         module: torch.nn.Module,
@@ -18,20 +20,3 @@ def _update_parameter(
     old_param = getattr(module, name)
     new_param = torch.nn.Parameter(data, requires_grad=old_param.requires_grad)
     setattr(module, name, new_param)
-
-
-def unsupported_meta_device(model):
-    """Return ``True`` when mixed real/meta parameters make lazy materialization unsafe."""
-    target_device = None
-    for param in model.parameters():
-        if target_device is None:
-            target_device = param.device
-        if param.device != target_device:
-            if param.device.type == "meta" or target_device.type == "meta":
-                return True
-    if target_device.type == "meta":
-        if hasattr(model, "path"):
-            return False
-        else:
-            return True
-    return False
