@@ -4,7 +4,9 @@
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 from enum import Enum
 
-from transformers.core_model_loading import Chunk, WeightConverter
+from transformers.core_model_loading import WeightConverter
+
+from defuser.checkpoint_ops import OwnedChunk
 
 
 class PATCH(str, Enum):
@@ -89,7 +91,7 @@ MODEL_CONFIG = {
                     "mlp.gate_proj.weight",
                     "mlp.up_proj.weight",
                 ],
-                operations=[Chunk(dim=0)],
+                operations=[OwnedChunk(dim=0)],
             ),
         ],
     },

@@ -21,6 +21,7 @@ from transformers.models.qwen3_omni_moe.configuration_qwen3_omni_moe import Qwen
 from transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe import Qwen3OmniMoeForConditionalGeneration
 
 from defuser import convert_model, replace_fused_blocks
+from defuser.checkpoint_ops import OwnedChunk
 from defuser.modeling.replace_modules import ReplacementModuleBase, apply_replacements, materialize_model
 
 
@@ -392,6 +393,7 @@ def test_glm4v_checkpoint_mapping_splits_gate_up_proj():
         for item in mapping
         if isinstance(item, WeightConverter) and item.source_patterns == ["mlp.gate_up_proj.weight"]
     )
+    assert isinstance(converter.operations[0], OwnedChunk)
 
     assert converter.target_patterns == [
         "mlp.gate_proj.weight",
@@ -407,6 +409,7 @@ def test_glm4v_checkpoint_mapping_splits_gate_up_proj():
 
     torch.testing.assert_close(split["mlp.gate_proj.weight"], fused[:3])
     torch.testing.assert_close(split["mlp.up_proj.weight"], fused[3:])
+    assert split["mlp.gate_proj.weight"].data_ptr() != split["mlp.up_proj.weight"].data_ptr()
 
 
 def test_glm4v_split_forward_matches_fused_math():
