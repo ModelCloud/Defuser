@@ -17,6 +17,7 @@ from packaging import version
 from transformers import AutoConfig
 
 from defuser.model_registry import MODEL_CONFIG
+from defuser.utils.common import warn_if_public_api_transformers_unsupported
 
 logger = LogBar(__name__)
 
@@ -73,6 +74,9 @@ def get_file_path_via_model_name(model_or_path: str, file_name):
 
 
 def pre_check_config(model_name: str | torch.nn.Module):
+    if warn_if_public_api_transformers_unsupported("pre_check_config()", logger):
+        return False
+
     if isinstance(model_name, str):
         config = AutoConfig.from_pretrained(model_name)
     elif isinstance(model_name, torch.nn.Module):

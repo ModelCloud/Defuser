@@ -36,8 +36,11 @@ from transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe import (
     Qwen3OmniMoeThinkerTextSparseMoeBlock,
 )
 
+import defuser.defuser as defuser_api
+import defuser.utils.hf as hf_utils
 from defuser import convert_model, replace_fused_blocks
 from defuser.checkpoint_ops import OwnedChunk, SplitFusedExpertGateUpProj
+from defuser.model_registry import MODEL_CONFIG
 from defuser.modeling.replace_modules import ReplacementModuleBase, apply_replacements, materialize_model
 from defuser.modeling.unfused_moe.glm4_moe import LinearGlm4MoeMoE
 from defuser.modeling.unfused_moe.mixtral import LinearMixtralSparseMoeBlock
@@ -45,6 +48,7 @@ from defuser.modeling.unfused_moe.qwen2_moe import LinearQwen2MoeSparseMoeBlock
 from defuser.modeling.unfused_moe.qwen3_moe import LinearQwen3MoeSparseMoeBlock
 from defuser.modeling.unfused_moe.qwen3_next import LinearQwen3NextSparseMoeBlock
 from defuser.modeling.unfused_moe.qwen3_omni_moe import LinearQwen3OmniMoeThinkerTextSparseMoeBlock
+from defuser.utils.common import MIN_SUPPORTED_TRANSFORMERS_VERSION
 
 
 
@@ -415,6 +419,56 @@ def test_apply_replacements_runs_custom_replacements():
 
 def test_replace_fused_blocks_returns_false_for_unregistered_model():
     assert replace_fused_blocks("unsupported_model_type") is False
+
+
+def test_model_registry_requires_transformers_5_3_or_newer():
+    assert {cfg["min_transformers_version"] for cfg in MODEL_CONFIG.values()} == {MIN_SUPPORTED_TRANSFORMERS_VERSION}
+
+
+def test_replace_fused_blocks_warns_on_unsupported_transformers(monkeypatch):
+    warnings = []
+
+    monkeypatch.setattr(defuser_api.transformers, "__version__", "5.2.9")
+    monkeypatch.setattr(defuser_api.logger, "warning", warnings.append)
+
+    assert defuser_api.replace_fused_blocks("mixtral") is False
+    assert len(warnings) == 1
+    assert "replace_fused_blocks()" in warnings[0]
+    assert f"transformers>={MIN_SUPPORTED_TRANSFORMERS_VERSION}" in warnings[0]
+
+
+def test_convert_model_warns_on_unsupported_transformers(monkeypatch):
+    warnings = []
+
+    class DummyModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.config = SimpleNamespace(model_type="mixtral")
+
+    monkeypatch.setattr(defuser_api.transformers, "__version__", "5.2.9")
+    monkeypatch.setattr(defuser_api.logger, "warning", warnings.append)
+
+    assert defuser_api.convert_model(DummyModel()) is False
+    assert len(warnings) == 1
+    assert "convert_model()" in warnings[0]
+    assert f"transformers>={MIN_SUPPORTED_TRANSFORMERS_VERSION}" in warnings[0]
+
+
+def test_pre_check_config_warns_on_unsupported_transformers(monkeypatch):
+    warnings = []
+
+    class DummyModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.config = SimpleNamespace(model_type="mixtral")
+
+    monkeypatch.setattr(hf_utils.transformers, "__version__", "5.2.9")
+    monkeypatch.setattr(hf_utils.logger, "warning", warnings.append)
+
+    assert hf_utils.pre_check_config(DummyModel()) is False
+    assert len(warnings) == 1
+    assert "pre_check_config()" in warnings[0]
+    assert f"transformers>={MIN_SUPPORTED_TRANSFORMERS_VERSION}" in warnings[0]
 
 
 def test_qwen3_5_moe():
