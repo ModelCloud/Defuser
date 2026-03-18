@@ -20,7 +20,31 @@ from defuser.utils.common import is_within_max_layers, is_transformers_version_g
 
 from defuser import DEBUG_ON
 
+from defuser.model_registry import MODEL_CONFIG, PATCH
+
 logger = LogBar(__name__)
+
+
+def is_model_patchable(model: torch.nn.Module) -> bool:
+    """Check if the model has a custom replacement registered via MODEL_CONFIG.
+
+    Returns True if the model's model_type matches a key in MODEL_CONFIG.
+    """
+    if hasattr(model, "config") and hasattr(model.config, "model_type"):
+        return model.config.model_type in MODEL_CONFIG and PATCH.DEFUSE in MODEL_CONFIG[model.config.model_type]
+    return False
+
+
+def _import_required_replacements(model: torch.nn.Module) -> None:
+    """Import replacement modules required for the model's defuse workflow."""
+    if not is_model_patchable(model):
+        return
+    model_type = model.config.model_type
+    module_path = MODEL_CONFIG[model_type].get(PATCH.DEFUSE)
+    if not module_path:
+        return
+    importlib.import_module(module_path)
+    logger.debug(f"Loaded replacement module for {model_type}: {module_path}")
 
 
 def materialize_model(model: torch.nn.Module) -> None:
@@ -181,7 +205,8 @@ class ReplacementModuleBase(ABC, torch.nn.Module):
 def _log_first_moe_block(model: torch.nn.Module, label: str) -> None:
     """Log the first experts module found in the model for debugging."""
     for name, module in model.named_modules():
-        if name.endswith(".experts"):
+        if (name.endswith(".experts")
+                and "_original_module" not in name): # FIXME `_original_module` will be moved to a different location in the future; a temporary check has been added.
             logger.info(f"Experts ({label}) [{name}] ({module.__class__.__name__}):\n{module}")
             return
 
@@ -238,12 +263,15 @@ def apply_replacements(
     Returns:
         The model with modules replaced.
     """
+    _import_required_replacements(model)
+
     _log_first_moe_block(model, "before replacement")
 
-    if auto_detect_moe and is_transformers_version_greater_or_equal_5():
+    # Custom replacements first
+    if is_model_patchable(model):
+        _apply_custom_replacements(model, max_layers=max_layers)
+    elif auto_detect_moe and is_transformers_version_greater_or_equal_5():
         _handle_moe_modules(model)
-
-    _apply_custom_replacements(model, max_layers=max_layers)
 
     _log_first_moe_block(model, "after replacement")
 
@@ -301,6 +329,7 @@ def _apply_custom_replacements(
                 module,
                 model.config,
             ).to(orig_dtype)
+            print("replacement", replacement)
             model.set_submodule(name, replacement)
             replaced.append((name, replacement_cls))
     else:

@@ -12,6 +12,7 @@ from defuser.utils.common import MIN_SUPPORTED_TRANSFORMERS_VERSION
 
 class PATCH(str, Enum):
     REPLACE_MODULE = "replace_module"
+    DEFUSE = "defuse"
 
 
 MODEL_CONFIG = {
@@ -114,5 +115,12 @@ MODEL_CONFIG = {
                 operations=[OwnedChunk(dim=0)],
             ),
         ],
+    },
+    "gpt_oss": {
+        # "min_transformers_version": "", # When `gpt_oss` was added to `transformers`, it was already implemented as "fused experts."
+    },
+    "llama4": {
+        # "min_transformers_version": "", # When `llama4` was added to `transformers`, it was already implemented as "fused experts."
+        PATCH.DEFUSE: "defuser.modeling.fused_moe.llama4",
     },
 }

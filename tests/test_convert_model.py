@@ -31,6 +31,8 @@ from transformers.models.qwen3_next.modeling_qwen3_next import (
     Qwen3NextSparseMoeBlock,
 )
 from transformers.models.qwen3_omni_moe.configuration_qwen3_omni_moe import Qwen3OmniMoeConfig
+from transformers.models.gpt_oss.modeling_gpt_oss import GptOssConfig, GptOssForCausalLM
+from transformers.models.llama4.modeling_llama4 import Llama4Config, Llama4ForConditionalGeneration
 from transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe import (
     Qwen3OmniMoeForConditionalGeneration,
     Qwen3OmniMoeThinkerTextSparseMoeBlock,
@@ -179,6 +181,50 @@ def _tiny_glm4_moe_config():
 
 def _tiny_glm4v_config():
     return Glm4vConfig(
+        text_config={
+            "vocab_size": 128,
+            "hidden_size": 64,
+            "num_hidden_layers": 1,
+            "num_attention_heads": 4,
+            "num_key_value_heads": 1,
+            "head_dim": 16,
+            "intermediate_size": 128,
+            "hidden_act": "silu",
+            "pad_token_id": 0,
+            "bos_token_id": 1,
+            "eos_token_id": 2,
+        },
+        vision_config={
+            "hidden_size": 64,
+            "intermediate_size": 128,
+            "num_hidden_layers": 1,
+            "num_attention_heads": 4,
+            "num_channels": 3,
+            "image_size": 16,
+            "patch_size": 4,
+            "out_hidden_size": 64,
+        },
+    )
+
+
+def _tiny_gpt_oss_config():
+    return GptOssConfig(
+        vocab_size=128,
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=1,
+        num_attention_heads=4,
+        num_key_value_heads=4,
+        num_local_experts=4,
+        num_experts_per_tok=2,
+        pad_token_id=0,
+        bos_token_id=1,
+        eos_token_id=2,
+    )
+
+
+def _tiny_llama4_config():
+    return Llama4Config(
         text_config={
             "vocab_size": 128,
             "hidden_size": 64,
@@ -772,6 +818,124 @@ def test_glm4v_split_forward_matches_fused_math():
     with torch.no_grad():
         mlp.gate_proj.weight.copy_(fused_gate_up[: config.intermediate_size])
         mlp.up_proj.weight.copy_(fused_gate_up[config.intermediate_size :])
+        mlp.down_proj.weight.copy_(down_proj)
+
+    fused_gate, fused_up = (hidden_states @ fused_gate_up.transpose(0, 1)).chunk(2, dim=-1)
+    expected = (torch.nn.functional.silu(fused_gate) * fused_up) @ down_proj.transpose(0, 1)
+
+    # The split module should exactly reproduce the original fused MLP math.
+    torch.testing.assert_close(mlp(hidden_states), expected)
+
+def test_gpt_oss():
+    from transformers.models.gpt_oss.modeling_gpt_oss import GptOssMLP
+
+    model = GptOssForCausalLM(_tiny_gpt_oss_config())
+    assert model.config.model_type == "gpt_oss"
+
+    original_moe_block = model.model.layers[0].mlp
+    assert isinstance(original_moe_block, GptOssMLP)
+
+    experts = original_moe_block.experts
+
+    gate_up = experts.gate_up_proj
+    down = experts.down_proj
+
+    expert_dim = model.config.intermediate_size
+
+    expected_gate = gate_up[0, :, :expert_dim].clone().T
+    expected_up = gate_up[0, :, expert_dim:].clone().T
+    expected_down = down[0].clone().T
+
+    converted = convert_model(model, cleanup_original=False, max_layers=1)
+    assert converted
+
+    moe_block = model.model.layers[0].mlp
+    experts = moe_block.experts
+
+    _assert_unfused_expert_module(experts)
+    expert0 = getattr(experts, "0")
+
+    materialize_model(model.model.layers[0])
+
+    torch.testing.assert_close(expert0.gate_proj.weight, expected_gate)
+    torch.testing.assert_close(expert0.up_proj.weight, expected_up)
+    torch.testing.assert_close(expert0.down_proj.weight, expected_down)
+
+
+def test_gpt_oss_split_forward_matches_fused_math():
+    from transformers.models.gpt_oss.modeling_gpt_oss import GptOssExperts
+
+    model = GptOssForCausalLM(_tiny_gpt_oss_config())
+    fused_experts = model.model.layers[0].mlp.experts
+    assert isinstance(fused_experts, GptOssExperts)
+
+    hidden_states = torch.randn(5, model.config.hidden_size, dtype=torch.float32)
+    top_k_index = torch.zeros((hidden_states.size(0), 1), dtype=torch.long)
+    top_k_weights = torch.ones((hidden_states.size(0), 1), dtype=hidden_states.dtype)
+
+    with torch.no_grad():
+        expected = fused_experts(hidden_states, top_k_index, top_k_weights)
+
+    converted = convert_model(model, cleanup_original=False, max_layers=1)
+    assert converted
+
+    split_experts = model.model.layers[0].mlp.experts
+    _assert_unfused_expert_module(split_experts)
+    materialize_model(model.model.layers[0])
+    with torch.no_grad():
+        actual = split_experts(hidden_states, top_k_index, top_k_weights)
+
+    # The split experts path should exactly reproduce the original fused experts math.
+    torch.testing.assert_close(actual, expected)
+
+def test_llama4():
+    from transformers.models.llama4.modeling_llama4 import Llama4TextMoe
+
+    model = Llama4ForConditionalGeneration(_tiny_llama4_config())
+    assert model.config.model_type == "llama4"
+
+    original_moe_block = model.language_model.model.layers[0].feed_forward
+    assert isinstance(original_moe_block, Llama4TextMoe)
+
+    experts = original_moe_block.experts
+
+    gate_up = experts.gate_up_proj
+    down = experts.down_proj
+
+    expert_dim = model.config.text_config.intermediate_size
+
+    expected_gate = gate_up[0, :, :expert_dim].clone().T
+    expected_up = gate_up[0, :, expert_dim:].clone().T
+    expected_down = down[0].clone().T
+
+    converted = convert_model(model, cleanup_original=False, max_layers=1)
+    assert converted
+
+    moe_block = model.language_model.model.layers[0].feed_forward
+    experts = moe_block.experts
+
+    _assert_unfused_expert_module(experts)
+    expert0 = getattr(experts, "0")
+
+    materialize_model(model.language_model.model.layers[0])
+
+    torch.testing.assert_close(expert0.gate_proj.weight, expected_gate)
+    torch.testing.assert_close(expert0.up_proj.weight, expected_up)
+    torch.testing.assert_close(expert0.down_proj.weight, expected_down)
+
+
+def test_llama4_split_forward_matches_fused_math():
+    from transformers.models.llama4.modeling_llama4 import Llama4TextMLP
+
+    config = _tiny_llama4_config().text_config
+    fused_gate_up = torch.randn(2 * config.intermediate_size, config.hidden_size, dtype=torch.float32)
+    down_proj = torch.randn(config.hidden_size, config.intermediate_size, dtype=torch.float32)
+    hidden_states = torch.randn(3, config.hidden_size, dtype=torch.float32)
+
+    mlp = Llama4TextMLP(config)
+    with torch.no_grad():
+        mlp.gate_proj.weight.copy_(fused_gate_up[: config.intermediate_size])
+        mlp.up_proj.weight.copy_(fused_gate_up[config.intermediate_size:])
         mlp.down_proj.weight.copy_(down_proj)
 
     fused_gate, fused_up = (hidden_states @ fused_gate_up.transpose(0, 1)).chunk(2, dim=-1)
