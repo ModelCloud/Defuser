@@ -267,11 +267,16 @@ def apply_replacements(
 
     _log_first_moe_block(model, "before replacement")
 
-    # Custom replacements first
+    # Models with an explicit DEFUSE workflow (for example llama4) need their
+    # custom replacements applied directly. All other models should still keep
+    # the legacy behavior: auto-detect fused experts first, then apply any
+    # registered custom replacements.
     if is_model_patchable(model):
         _apply_custom_replacements(model, max_layers=max_layers)
-    elif auto_detect_moe and is_transformers_version_greater_or_equal_5():
-        _handle_moe_modules(model)
+    else:
+        if auto_detect_moe and is_transformers_version_greater_or_equal_5():
+            _handle_moe_modules(model)
+        _apply_custom_replacements(model, max_layers=max_layers)
 
     _log_first_moe_block(model, "after replacement")
 

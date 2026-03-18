@@ -117,10 +117,10 @@ MODEL_CONFIG = {
         ],
     },
     "gpt_oss": {
-        # "min_transformers_version": "", # When `gpt_oss` was added to `transformers`, it was already implemented as "fused experts."
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
     "llama4": {
-        # "min_transformers_version": "", # When `llama4` was added to `transformers`, it was already implemented as "fused experts."
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
         PATCH.DEFUSE: "defuser.modeling.fused_moe.llama4",
     },
 }
