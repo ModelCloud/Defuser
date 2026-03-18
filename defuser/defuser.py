@@ -29,10 +29,8 @@ def get_checkpoint_conversion_mapping(model_type):
         conversion_mapping.orig_get_checkpoint_conversion_mapping = conversion_mapping.get_checkpoint_conversion_mapping
 
     cfg = MODEL_CONFIG.get(model_type)
-    if cfg:
-        return deepcopy(cfg.get("checkpoint_mapping", []))
-
-    from transformers import conversion_mapping
+    if cfg and "checkpoint_mapping" in cfg:
+        return deepcopy(cfg["checkpoint_mapping"])
 
     return conversion_mapping.orig_get_checkpoint_conversion_mapping(model_type)
 

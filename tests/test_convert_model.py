@@ -614,6 +614,24 @@ def test_mixtral_checkpoint_mapping_splits_fused_experts():
     torch.testing.assert_close(split[".experts.3.up_proj.weight"], fused_gate_up[3, 3:])
 
 
+def test_registered_models_without_custom_checkpoint_mapping_keep_transformers_fallback():
+    from transformers import conversion_mapping
+
+    upstream_get_mapping = getattr(
+        conversion_mapping,
+        "orig_get_checkpoint_conversion_mapping",
+        conversion_mapping.get_checkpoint_conversion_mapping,
+    )
+    upstream_mapping = upstream_get_mapping("qwen2_moe")
+
+    replace_fused_blocks("qwen2_moe")
+
+    patched_mapping = conversion_mapping.get_checkpoint_conversion_mapping("qwen2_moe")
+    assert len(patched_mapping) == len(upstream_mapping)
+    assert [item.source_patterns for item in patched_mapping] == [item.source_patterns for item in upstream_mapping]
+    assert [item.target_patterns for item in patched_mapping] == [item.target_patterns for item in upstream_mapping]
+
+
 def test_mixtral_from_pretrained_loads_fused_checkpoint_into_defused_model(tmp_path):
     config = _tiny_mixtral_config()
     source_model = _create_original_mixtral_source_model(config)
