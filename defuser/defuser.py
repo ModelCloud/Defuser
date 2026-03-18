@@ -22,6 +22,7 @@ from logbar import LogBar
 logger = LogBar(__name__)
 
 def get_checkpoint_conversion_mapping(model_type):
+    """Return Defuser's checkpoint remapping rules for one registered model type."""
     from transformers import conversion_mapping
 
     if not hasattr(conversion_mapping, "orig_get_checkpoint_conversion_mapping"):
@@ -41,6 +42,7 @@ class PatchError(Exception):
 
 
 def replace_fused_blocks(model_type: str) -> bool:
+    """Patch supported HF model classes so future loads instantiate defused blocks."""
     if warn_if_public_api_transformers_unsupported("replace_fused_blocks()", logger):
         return False
 
@@ -117,6 +119,7 @@ def convert_model(
         cleanup_original: bool = False,
         max_layers: int | None = None,
 ) -> bool:
+    """Convert one loaded model in place from fused experts to defused modules."""
     if warn_if_public_api_transformers_unsupported("convert_model()", logger):
         return False
 

@@ -14,20 +14,14 @@ def _update_parameter(
         name: str,
         data: torch.Tensor,
 ) -> None:
+    """Replace one module parameter while preserving its ``requires_grad`` flag."""
     old_param = getattr(module, name)
     new_param = torch.nn.Parameter(data, requires_grad=old_param.requires_grad)
     setattr(module, name, new_param)
 
 
 def unsupported_meta_device(model):
-    """Checks if the model is a valid model for auto_round.
-
-    Args:
-    model: The model to be checked.
-
-    Returns:
-    bool: True if the model is valid, False otherwise.
-    """
+    """Return ``True`` when mixed real/meta parameters make lazy materialization unsafe."""
     target_device = None
     for param in model.parameters():
         if target_device is None:

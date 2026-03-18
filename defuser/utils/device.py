@@ -35,6 +35,7 @@ def clear_memory(
         tensor: torch.Tensor | list[torch.Tensor] | None = None,
         device_list: tuple | list | str | torch.device | None = None,
 ):
+    """Release Python references and flush accelerator caches after tensor surgery."""
     # ------------------------
     # Clear CPU-side references
     # ------------------------
@@ -87,14 +88,7 @@ def clear_memory(
 
 
 def unsupported_meta_device(model):
-    """Checks if the model is a valid model.
-
-    Args:
-    model: The model to be checked.
-
-    Returns:
-    bool: True if the model is valid, False otherwise.
-    """
+    """Return ``True`` when a model mixes meta and real devices in unsupported ways."""
     target_device = None
     for param in model.parameters():
         if target_device is None:

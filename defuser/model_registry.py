@@ -12,7 +12,7 @@ from defuser.utils.common import MIN_SUPPORTED_TRANSFORMERS_VERSION
 
 class PATCH(str, Enum):
     REPLACE_MODULE = "replace_module"
-    DEFUSE = "defuse"
+    EXPERTS_DEFUSE = "experts_defuse"
 
 
 MODEL_CONFIG = {
@@ -121,6 +121,11 @@ MODEL_CONFIG = {
     },
     "llama4": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
-        PATCH.DEFUSE: "defuser.modeling.fused_moe.llama4",
+        PATCH.EXPERTS_DEFUSE: [
+            {
+                "module_class": "transformers.models.llama4.modeling_llama4.Llama4TextExperts",
+                "forward_impl": "batched_input",
+            }
+        ],
     },
 }

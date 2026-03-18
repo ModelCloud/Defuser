@@ -10,6 +10,8 @@ from transformers.activations import ACT2FN
 
 
 class MixtralBlockSparseTop2MLP(nn.Module):
+    """Per-expert Mixtral MLP with explicit gate, up, and down projections."""
+
     def __init__(self, config: MixtralConfig):
         super().__init__()
         self.hidden_size = config.hidden_size
@@ -20,6 +22,7 @@ class MixtralBlockSparseTop2MLP(nn.Module):
         self.act_fn = ACT2FN[config.hidden_act]
 
     def forward(self, x):
+        """Apply the standard SwiGLU-style Mixtral expert math."""
         down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
         return down_proj
 
@@ -53,7 +56,7 @@ class LinearMixtralSparseMoeBlock(nn.Module):
         self.jitter_noise = config.router_jitter_noise
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        """ """
+        """Match HF Mixtral MoE routing while executing explicit per-expert modules."""
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         if self.training and self.jitter_noise > 0:
             hidden_states *= torch.empty_like(hidden_states).uniform_(1.0 - self.jitter_noise, 1.0 + self.jitter_noise)

@@ -924,6 +924,27 @@ def test_llama4():
     torch.testing.assert_close(expert0.down_proj.weight, expected_down)
 
 
+def test_llama4_experts_forward_matches_fused_math():
+    model = Llama4ForConditionalGeneration(_tiny_llama4_config())
+    fused_experts = model.language_model.model.layers[0].feed_forward.experts
+
+    hidden_states = torch.randn(fused_experts.num_experts * 5, model.config.text_config.hidden_size, dtype=torch.float32)
+    with torch.no_grad():
+        expected = fused_experts(hidden_states)
+
+    converted = convert_model(model, cleanup_original=False, max_layers=1)
+    assert converted
+
+    split_experts = model.language_model.model.layers[0].feed_forward.experts
+    _assert_unfused_expert_module(split_experts)
+    materialize_model(model.language_model.model.layers[0])
+    with torch.no_grad():
+        actual = split_experts(hidden_states)
+
+    # The batched-input generic path should preserve the original llama4 experts math.
+    torch.testing.assert_close(actual, expected)
+
+
 def test_llama4_split_forward_matches_fused_math():
     from transformers.models.llama4.modeling_llama4 import Llama4TextMLP
 

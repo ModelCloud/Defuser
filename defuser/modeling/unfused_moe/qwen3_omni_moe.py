@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 
 class LinearQwen3OmniMoeThinkerTextSparseMoeBlock(nn.Module):
+    """Text thinker MoE block for qwen3-omni with explicit per-expert modules."""
+
     def __init__(self, config):
         super().__init__()
         from transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe import (
@@ -28,7 +30,7 @@ class LinearQwen3OmniMoeThinkerTextSparseMoeBlock(nn.Module):
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        """ """
+        """Route tokens exactly like HF qwen3-omni text MoE, then run explicit experts."""
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
         _, routing_weights, selected_experts = self.gate(hidden_states)

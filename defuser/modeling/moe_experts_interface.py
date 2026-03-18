@@ -25,10 +25,13 @@ Usage:
     # Now the model uses linear_loop forward which supports quantized nn.Linear layers
 """
 
+from types import MethodType
+
 import torch
 from logbar import LogBar
 from torch import nn
 
+from defuser.model_registry import MODEL_CONFIG, PATCH
 from defuser.utils.device import clear_memory, to_meta
 
 from defuser import DEBUG_ON
@@ -45,6 +48,7 @@ except ImportError:
 
 # Expert implementation name - change this if transformers want to use a different name
 LINEAR_LOOP_IMPL = "linear_loop"
+BATCHED_INPUT_IMPL = "batched_input"
 
 # Known expert projection patterns for reference
 # These are used as hints when auto-detection needs to infer projection properties
@@ -77,6 +81,17 @@ class _ExpertContainer(nn.Module):
 def is_linear_loop_available() -> bool:
     """Check if linear_loop experts implementation is available."""
     return HAS_EXPERTS_INTERFACE
+
+
+def _apply_expert_gate(module: nn.Module, gate_out: torch.Tensor, up_out: torch.Tensor) -> torch.Tensor:
+    """Apply the expert's activation path using either a custom gate hook or ``act_fn``."""
+    if hasattr(module, "_apply_gate"):
+        return module._apply_gate(torch.cat([gate_out, up_out], dim=-1))
+
+    act_fn = getattr(module, "act_fn", None)
+    if act_fn is None:
+        raise AttributeError(f"{module.__class__.__name__} must define either `_apply_gate` or `act_fn`.")
+    return act_fn(gate_out) * up_out
 
 
 def linear_loop_experts_forward(
@@ -152,13 +167,7 @@ def linear_loop_experts_forward(
         expert = getattr(self, str(expert_idx))
         gate_out = expert.gate_proj(expert_input)  # (num_samples, intermediate_dim)
         up_out = expert.up_proj(expert_input)  # (num_samples, intermediate_dim)
-
-        # Apply gating
-        if hasattr(self, "_apply_gate"):
-            gate_up_out = torch.cat([gate_out, up_out], dim=-1)
-            gated_out = self._apply_gate(gate_up_out)  # (num_samples, intermediate_dim)
-        else:
-            gated_out = self.act_fn(gate_out) * up_out  # (num_samples, intermediate_dim)
+        gated_out = _apply_expert_gate(self, gate_out, up_out)
 
         # Down projection
         expert_out = expert.down_proj(gated_out)  # (num_samples, hidden_dim)
@@ -180,6 +189,31 @@ def linear_loop_experts_forward(
     return final_hidden_states
 
 
+def batched_input_experts_forward(self: nn.Module, hidden_states: torch.Tensor) -> torch.Tensor:
+    """Run defused experts for models that feed experts as expert-major input batches.
+
+    Llama4 is the current example: upstream code repeats and pre-weights tokens,
+    then calls ``experts(hidden_states)`` where the leading dimension is laid out
+    as ``[expert0_tokens, expert1_tokens, ...]``. This forward keeps that public
+    contract while still executing per-expert ``nn.Linear`` modules internally.
+    """
+    if DEBUG_ON: logger.debug(f"Using {BATCHED_INPUT_IMPL} experts forward for {self.__class__.__name__}")
+
+    hidden_dim = hidden_states.size(-1)
+    expert_inputs = hidden_states.view(self.num_experts, -1, hidden_dim)
+    expert_outputs = []
+
+    for expert_idx in range(self.num_experts):
+        expert = getattr(self, str(expert_idx))
+        expert_input = expert_inputs[expert_idx]
+        gate_out = expert.gate_proj(expert_input)
+        up_out = expert.up_proj(expert_input)
+        gated_out = _apply_expert_gate(self, gate_out, up_out)
+        expert_outputs.append(expert.down_proj(gated_out))
+
+    return torch.stack(expert_outputs, dim=0).reshape(-1, hidden_dim)
+
+
 def register_linear_loop_experts() -> bool:
     """Register the linear_loop experts implementation with transformers.
 
@@ -199,6 +233,45 @@ def register_linear_loop_experts() -> bool:
         if DEBUG_ON: logger.debug(f"Registered '{LINEAR_LOOP_IMPL}' experts implementation")
 
     return True
+
+
+def _model_experts_defuse_specs(model: nn.Module) -> list[dict]:
+    """Return declarative experts-defusion specs for the current model type."""
+    config = getattr(model, "config", None)
+    model_type = getattr(config, "model_type", None)
+    if model_type is None:
+        return []
+
+    specs = MODEL_CONFIG.get(model_type, {}).get(PATCH.EXPERTS_DEFUSE, [])
+    if isinstance(specs, dict):
+        return [specs]
+    return list(specs)
+
+
+def _module_class_path(module: nn.Module) -> str:
+    """Return a stable import-style class path for matching model specs."""
+    return f"{module.__class__.__module__}.{module.__class__.__name__}"
+
+
+def _matching_experts_defuse_spec(module: nn.Module, specs: list[dict]) -> dict | None:
+    """Find the first declarative experts-defusion spec that matches ``module``."""
+    module_path = _module_class_path(module)
+    module_name = module.__class__.__name__
+
+    for spec in specs:
+        target = spec.get("module_class")
+        if target in {module_path, module_name}:
+            return spec
+    return None
+
+
+def _install_instance_forward(module: nn.Module, implementation: str) -> None:
+    """Attach a generic forward implementation directly to one experts module."""
+    if implementation == BATCHED_INPUT_IMPL:
+        module.forward = MethodType(batched_input_experts_forward, module)
+        return
+
+    raise ValueError(f"Unsupported experts forward implementation: {implementation}")
 
 
 def _detect_expert_projections(module: nn.Module) -> dict[str, dict]:
@@ -613,11 +686,26 @@ def prepare_model_for_moe_quantization(model: nn.Module, implementation: str = L
             "This requires transformers >= 5.0.0 with MOE integration support."
         )
 
-    # Unfuse all fused experts modules (only those supporting @use_experts_implementation)
+    # Unfuse all fused experts modules, including models that need a generic
+    # instance-level forward override instead of transformers' decorator path.
     unfused_modules = []
+    decorated_unfused_modules = []
+    experts_defuse_specs = _model_experts_defuse_specs(model)
     for name, module in model.named_modules():
+        spec = _matching_experts_defuse_spec(module, experts_defuse_specs)
+        if spec is not None and _unfuse_experts_weights_inplace(
+            module,
+            check_decorator=False,
+            projection_names=spec.get("projection_names"),
+        ):
+            _install_instance_forward(module, spec["forward_impl"])
+            unfused_modules.append(name)
+            if DEBUG_ON: logger.debug(f"[MoE Prep] Unfused '{name}' via declarative spec")
+            continue
+
         if _unfuse_experts_weights_inplace(module):
             unfused_modules.append(name)
+            decorated_unfused_modules.append(name)
             if DEBUG_ON: logger.debug(f"[MoE Prep] Unfused '{name}'")
 
     # Only set config if we actually unfused something
@@ -627,8 +715,9 @@ def prepare_model_for_moe_quantization(model: nn.Module, implementation: str = L
         if DEBUG_ON: logger.info(f"[MoE Prep] Unfused {len(unfused_modules)} MOE experts modules")
         clear_memory()
 
-        # Set config for linear_loop forward
-        if hasattr(model, "config"):
+        # Set config for linear_loop forward only when the upstream model uses
+        # the decorator-based experts interface.
+        if decorated_unfused_modules and hasattr(model, "config"):
             saved_impl = getattr(model.config, "experts_implementation", None)
             impl_to_set = saved_impl if saved_impl else implementation
             model.config._experts_implementation = impl_to_set

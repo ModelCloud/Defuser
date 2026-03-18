@@ -14,6 +14,7 @@ class LinearGlm4vTextMLP(nn.Module):
         self.activation_fn = ACT2FN[config.hidden_act]
 
     def forward(self, hidden_states):
+        """Reproduce the original fused GLM4V text MLP using split linear layers."""
         gate = self.gate_proj(hidden_states)
         up = self.up_proj(hidden_states)
         # Match the original fused `gate_up_proj.chunk(2, dim=-1)` activation path.
