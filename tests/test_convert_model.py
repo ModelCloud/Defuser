@@ -42,7 +42,7 @@ from transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe import (
 import defuser.defuser as defuser_api
 import defuser.utils.hf as hf_utils
 from defuser import convert_model, replace_fused_blocks
-from defuser.checkpoint_ops import OwnedChunk, SplitFusedExpertGateUpProj
+from defuser.checkpoint_ops import OwnedChunk, SplitFusedExpertDownProj, SplitFusedExpertGateUpProj
 from defuser.model_registry import MODEL_CONFIG, PATCH
 from defuser.modeling.replace_modules import ReplacementModuleBase, apply_replacements, materialize_model
 from defuser.modeling.unfused_moe.glm4_moe import LinearGlm4MoeMoE
@@ -660,6 +660,28 @@ def test_mixtral_checkpoint_mapping_splits_fused_experts():
     torch.testing.assert_close(split[".experts.0.up_proj.weight"], fused_gate_up[0, 3:])
     torch.testing.assert_close(split[".experts.3.gate_proj.weight"], fused_gate_up[3, :3])
     torch.testing.assert_close(split[".experts.3.up_proj.weight"], fused_gate_up[3, 3:])
+    assert split[".experts.0.gate_proj.weight"].is_contiguous()
+    assert split[".experts.0.up_proj.weight"].is_contiguous()
+    assert split[".experts.0.gate_proj.weight"].untyped_storage().data_ptr() != fused_gate_up.untyped_storage().data_ptr()
+    assert split[".experts.0.up_proj.weight"].untyped_storage().data_ptr() != fused_gate_up.untyped_storage().data_ptr()
+
+
+def test_mixtral_checkpoint_mapping_splits_down_proj_into_owned_contiguous_tensors():
+    split_op = SplitFusedExpertDownProj()
+    fused_down = torch.arange(4 * 8 * 3, dtype=torch.float32).reshape(4, 8, 3)
+
+    split = split_op.convert(
+        {".experts.down_proj": fused_down},
+        [".experts.down_proj"],
+        [".experts.0.down_proj.weight"],
+    )
+
+    torch.testing.assert_close(split[".experts.0.down_proj.weight"], fused_down[0])
+    torch.testing.assert_close(split[".experts.3.down_proj.weight"], fused_down[3])
+    assert split[".experts.0.down_proj.weight"].is_contiguous()
+    assert split[".experts.3.down_proj.weight"].is_contiguous()
+    assert split[".experts.0.down_proj.weight"].untyped_storage().data_ptr() != fused_down.untyped_storage().data_ptr()
+    assert split[".experts.3.down_proj.weight"].untyped_storage().data_ptr() != fused_down.untyped_storage().data_ptr()
 
 
 def test_registered_models_without_custom_checkpoint_mapping_keep_transformers_fallback():
@@ -890,6 +912,10 @@ def test_glm4v_checkpoint_mapping_splits_gate_up_proj():
     torch.testing.assert_close(split["mlp.gate_proj.weight"], fused[:3])
     torch.testing.assert_close(split["mlp.up_proj.weight"], fused[3:])
     assert split["mlp.gate_proj.weight"].data_ptr() != split["mlp.up_proj.weight"].data_ptr()
+    assert split["mlp.gate_proj.weight"].is_contiguous()
+    assert split["mlp.up_proj.weight"].is_contiguous()
+    assert split["mlp.gate_proj.weight"].untyped_storage().data_ptr() != fused.untyped_storage().data_ptr()
+    assert split["mlp.up_proj.weight"].untyped_storage().data_ptr() != fused.untyped_storage().data_ptr()
 
 
 def test_glm4v_split_forward_matches_fused_math():

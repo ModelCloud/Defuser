@@ -2,6 +2,11 @@ import torch
 from transformers.core_model_loading import Chunk, Concatenate, ConversionOps, MergeModulelist
 
 
+def _owned_contiguous_clone(tensor: torch.Tensor) -> torch.Tensor:
+    """Return a contiguous tensor with its own storage using a single clone."""
+    return tensor.clone(memory_format=torch.contiguous_format)
+
+
 class OwnedChunk(Chunk):
     """Split fused tensors into independent chunks so save/load keeps both weights."""
 
@@ -12,7 +17,7 @@ class OwnedChunk(Chunk):
         split = super().convert(input_dict, source_patterns, target_patterns, **kwargs)
         # `torch.chunk()` returns views into shared storage, which can make safetensors
         # drop one side of the split tensor during save. Clone each chunk to own storage.
-        return {name: tensor.contiguous().clone() for name, tensor in split.items()}
+        return {name: _owned_contiguous_clone(tensor) for name, tensor in split.items()}
 
 
 class SplitFusedExpertGateUpProj(ConversionOps):
@@ -45,8 +50,8 @@ class SplitFusedExpertGateUpProj(ConversionOps):
         for expert_idx in range(num_experts):
             expert_tensor = tensor.select(self.expert_dim, expert_idx)
             gate_proj, up_proj = torch.chunk(expert_tensor, 2, dim=self.proj_dim)
-            split_tensors[self._expert_target(target_patterns[0], expert_idx)] = gate_proj.contiguous().clone()
-            split_tensors[self._expert_target(target_patterns[1], expert_idx)] = up_proj.contiguous().clone()
+            split_tensors[self._expert_target(target_patterns[0], expert_idx)] = _owned_contiguous_clone(gate_proj)
+            split_tensors[self._expert_target(target_patterns[1], expert_idx)] = _owned_contiguous_clone(up_proj)
 
         return split_tensors
 
@@ -126,7 +131,7 @@ class SplitFusedExpertDownProj(ConversionOps):
         split_tensors: dict[str, torch.Tensor] = {}
         for expert_idx in range(num_experts):
             expert_tensor = tensor.select(self.expert_dim, expert_idx)
-            split_tensors[self._expert_target(target_patterns[0], expert_idx)] = expert_tensor.contiguous().clone()
+            split_tensors[self._expert_target(target_patterns[0], expert_idx)] = _owned_contiguous_clone(expert_tensor)
 
         return split_tensors
 
