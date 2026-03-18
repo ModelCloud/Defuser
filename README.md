@@ -13,6 +13,8 @@
 
 Defuser converts select Hugging Face Transformers `5.3.0+` fused or stacked MoE and MLP blocks back into plain, per-expert `nn.Linear` modules. It keeps the forward math intact while exposing individual projections again so quantizers, activation capture, debugging hooks, and checkpoint tooling can work against a simple module layout instead of fused expert tensors.
 
+Defuser is designed and CI-tested for `transformers>=5.3.0`, and support is only offered for that version range.
+
 ## Purpose
 
 Defuser exists for cases where newer Transformers modeling code optimizes model structure in ways that are good for runtime, but harder for tooling that needs direct access to individual projections.
@@ -32,7 +34,7 @@ from defuser import convert_model, replace_fused_blocks
 
 - `replace_fused_blocks(model_type)` patches supported HF model classes before `from_pretrained()` or direct model construction.
 - `convert_model(model, cleanup_original=True, max_layers=None)` converts an already loaded model in place. This is the runtime defusion path used for `qwen3_5_moe` style checkpoints.
-- Defuser only supports `transformers>=5.3.0`. Older versions log a warning on these public APIs and are skipped as unsupported.
+- Defuser is designed and CI-tested for `transformers>=5.3.0`, and support is only offered for that version range. Older versions log a warning on these public APIs and are skipped as unsupported.
 
 ## Supported Models
 
