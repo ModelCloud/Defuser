@@ -4,6 +4,8 @@
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 from enum import Enum
 
+from transformers.core_model_loading import Chunk, WeightConverter
+
 
 class PATCH(str, Enum):
     REPLACE_MODULE = "replace_module"
@@ -69,6 +71,25 @@ MODEL_CONFIG = {
                 "transformers.models.glm4_moe.modeling_glm4_moe.Glm4MoeMoE",
                 "defuser.modeling.unfused_moe.glm4_moe.LinearGlm4MoeMoE",
             )
+        ],
+    },
+    "glm4v": {
+        "min_transformers_version": "5.0.0",
+        PATCH.REPLACE_MODULE: [
+            (
+                "transformers.models.glm4v.modeling_glm4v.Glm4vTextMLP",
+                "defuser.modeling.glm4v.LinearGlm4vTextMLP",
+            )
+        ],
+        "checkpoint_mapping": [
+            WeightConverter(
+                source_patterns="mlp.gate_up_proj.weight",
+                target_patterns=[
+                    "mlp.gate_proj.weight",
+                    "mlp.up_proj.weight",
+                ],
+                operations=[Chunk(dim=0)],
+            ),
         ],
     },
 }
