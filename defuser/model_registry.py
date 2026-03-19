@@ -128,4 +128,7 @@ MODEL_CONFIG = {
             }
         ],
     },
+    "phimoe": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
 }

@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "Defuser"
-version = "0.0.15"
+version = "0.0.16"
 description = "Model defuser helper for HF Transformers."
 readme = "README.md"
 requires-python = ">=3.9"
