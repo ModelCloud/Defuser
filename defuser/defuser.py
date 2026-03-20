@@ -200,7 +200,7 @@ def convert_model(
     if not check_model_compatibility(model):
         return False
 
-    apply_model_patches(model)
+    apply_model_patches(model, max_layers=max_layers)
 
     # If fused blocks have already been structurally replaced at load model before,
     # there is no need to perform runtime defusing again
