@@ -13,9 +13,10 @@ def update_module(
     model,
     cleanup_original: bool = True,
     max_layers: int | None = None,
+    filter_rules=None,
 ):
     """Run Defuser's replacement pipeline and optionally drop original modules."""
-    model = apply_replacements(model, max_layers=max_layers)
+    model = apply_replacements(model, max_layers=max_layers, filter_rules=filter_rules)
 
     if cleanup_original:
         release_original_module_(model)

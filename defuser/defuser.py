@@ -117,6 +117,7 @@ def convert_model(
         model: nn.Module,
         cleanup_original: bool = False,
         max_layers: int | None = None,
+        filter: list[str] | None = None,
 ) -> bool:
     """Convert one loaded model in place from fused experts to defused modules."""
     if warn_if_public_api_transformers_unsupported("convert_model()", logger):
@@ -200,7 +201,7 @@ def convert_model(
     if not check_model_compatibility(model):
         return False
 
-    apply_model_patches(model)
+    apply_model_patches(model, max_layers=max_layers, filter_rules=filter)
 
     # If fused blocks have already been structurally replaced at load model before,
     # there is no need to perform runtime defusing again
@@ -214,6 +215,7 @@ def convert_model(
         model,
         cleanup_original=cleanup_original,
         max_layers=max_layers,
+        filter_rules=filter,
     )
 
     return True

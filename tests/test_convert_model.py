@@ -37,6 +37,7 @@ from transformers.models.phimoe.modeling_phimoe import PhimoeConfig, PhimoeForCa
 from transformers.models.llama4.modeling_llama4 import Llama4Config, Llama4ForConditionalGeneration
 from transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe import (
     Qwen3OmniMoeForConditionalGeneration,
+    Qwen3OmniMoeTalkerTextSparseMoeBlock,
     Qwen3OmniMoeThinkerTextSparseMoeBlock,
 )
 
@@ -51,7 +52,10 @@ from defuser.modeling.unfused_moe.mixtral import LinearMixtralSparseMoeBlock
 from defuser.modeling.unfused_moe.qwen2_moe import LinearQwen2MoeSparseMoeBlock
 from defuser.modeling.unfused_moe.qwen3_moe import LinearQwen3MoeSparseMoeBlock
 from defuser.modeling.unfused_moe.qwen3_next import LinearQwen3NextSparseMoeBlock
-from defuser.modeling.unfused_moe.qwen3_omni_moe import LinearQwen3OmniMoeThinkerTextSparseMoeBlock
+from defuser.modeling.unfused_moe.qwen3_omni_moe import (
+    LinearQwen3OmniMoeTalkerTextSparseMoeBlock,
+    LinearQwen3OmniMoeThinkerTextSparseMoeBlock,
+)
 from defuser.utils.common import MIN_SUPPORTED_TRANSFORMERS_VERSION
 
 
@@ -114,6 +118,25 @@ def _tiny_qwen3_omni_config():
             },
         },
     )
+
+
+def _tiny_qwen3_omni_talker_text_config():
+    config = Qwen3OmniMoeConfig(enable_audio_output=True).talker_config.text_config
+    config.hidden_size = 64
+    config.intermediate_size = 128
+    config.moe_intermediate_size = 32
+    config.shared_expert_intermediate_size = 32
+    config.num_hidden_layers = 1
+    config.num_attention_heads = 4
+    config.num_key_value_heads = 4
+    config.head_dim = 16
+    config.num_experts = 4
+    config.num_experts_per_tok = 2
+    config.vocab_size = 128
+    config.pad_token_id = 0
+    config.bos_token_id = 1
+    config.eos_token_id = 2
+    return config
 
 
 def _tiny_qwen3_5_moe_config():
@@ -857,6 +880,17 @@ def test_qwen3_omni_defused_forward_matches_fused_math():
     _assert_sparse_moe_defused_matches_fused_math(
         Qwen3OmniMoeThinkerTextSparseMoeBlock(config),
         LinearQwen3OmniMoeThinkerTextSparseMoeBlock(config),
+        hidden_states,
+    )
+
+
+def test_qwen3_omni_talker_defused_forward_matches_fused_math():
+    config = _tiny_qwen3_omni_talker_text_config()
+    hidden_states = torch.randn(2, 3, config.hidden_size, dtype=torch.float32)
+
+    _assert_sparse_moe_defused_matches_fused_math(
+        Qwen3OmniMoeTalkerTextSparseMoeBlock(config),
+        LinearQwen3OmniMoeTalkerTextSparseMoeBlock(config),
         hidden_states,
     )
 

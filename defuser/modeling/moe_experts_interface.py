@@ -32,6 +32,7 @@ from logbar import LogBar
 from torch import nn
 
 from defuser.model_registry import MODEL_CONFIG, PATCH
+from defuser.utils.common import compile_module_name_filter, matches_module_name_filter
 from defuser.utils.device import clear_memory, to_meta
 
 from defuser import DEBUG_ON
@@ -83,8 +84,18 @@ def is_linear_loop_available() -> bool:
     return HAS_EXPERTS_INTERFACE
 
 
-def _apply_expert_gate(module: nn.Module, gate_out: torch.Tensor, up_out: torch.Tensor) -> torch.Tensor:
-    """Apply the expert's activation path using either a custom gate hook or ``act_fn``."""
+def _apply_expert_gate(
+    module: nn.Module,
+    gate_out: torch.Tensor | None,
+    up_out: torch.Tensor,
+) -> torch.Tensor:
+    """Apply the expert activation path for gated and non-gated expert MLPs."""
+    if gate_out is None:
+        act_fn = getattr(module, "act_fn", None)
+        if act_fn is None:
+            raise AttributeError(f"{module.__class__.__name__} must define `act_fn` for non-gated experts.")
+        return act_fn(up_out)
+
     if hasattr(module, "_apply_gate"):
         return module._apply_gate(torch.cat([gate_out, up_out], dim=-1))
 
@@ -165,8 +176,12 @@ def linear_loop_experts_forward(
 
         # Get this expert's container with its projection layers
         expert = getattr(self, str(expert_idx))
-        gate_out = expert.gate_proj(expert_input)  # (num_samples, intermediate_dim)
-        up_out = expert.up_proj(expert_input)  # (num_samples, intermediate_dim)
+        if hasattr(expert, "gate_proj"):
+            gate_out = expert.gate_proj(expert_input)  # (num_samples, intermediate_dim)
+            up_out = expert.up_proj(expert_input)  # (num_samples, intermediate_dim)
+        else:
+            gate_out = None
+            up_out = expert.up_proj(expert_input)
         gated_out = _apply_expert_gate(self, gate_out, up_out)
 
         # Down projection
@@ -580,8 +595,15 @@ def _unfuse_experts_weights_inplace(
     is_transposed = getattr(module, "is_transposed", None)
     if is_transposed is None:
         # Infer from shape: typically hidden_dim < intermediate_dim
-        dim1, dim2 = first_param.shape[1], first_param.shape[2]
-        is_transposed = dim1 < dim2
+        if (
+            first_proj_name in {"up_proj", "down_proj"}
+            and "gate_up_proj" not in detected_projections
+            and "gate_proj" not in detected_projections
+        ):
+            is_transposed = False
+        else:
+            dim1, dim2 = first_param.shape[1], first_param.shape[2]
+            is_transposed = dim1 < dim2
 
     dtype = first_param.dtype
     target_device = first_param.device if first_param.device.type != "meta" else "cpu"
@@ -672,7 +694,11 @@ def _unfuse_experts_weights_inplace(
     return True
 
 
-def prepare_model_for_moe_quantization(model: nn.Module, implementation: str = LINEAR_LOOP_IMPL) -> list[str]:
+def prepare_model_for_moe_quantization(
+    model: nn.Module,
+    implementation: str = LINEAR_LOOP_IMPL,
+    filter_rules=None,
+) -> list[str]:
     """Prepare a model for MOE quantization using transformers' experts interface.
 
     This function:
@@ -701,7 +727,10 @@ def prepare_model_for_moe_quantization(model: nn.Module, implementation: str = L
     unfused_modules = []
     decorated_unfused_modules = []
     experts_defuse_specs = _model_experts_defuse_specs(model)
+    module_name_filter = compile_module_name_filter(filter_rules)
     for name, module in model.named_modules():
+        if not matches_module_name_filter(name, module_name_filter):
+            continue
         spec = _matching_experts_defuse_spec(module, experts_defuse_specs)
         if spec is not None and _unfuse_experts_weights_inplace(
             module,

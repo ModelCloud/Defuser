@@ -15,7 +15,12 @@ import torch
 from logbar import LogBar
 from tqdm import tqdm
 
-from defuser.utils.common import is_within_max_layers, is_transformers_version_greater_or_equal_5
+from defuser.utils.common import (
+    compile_module_name_filter,
+    is_within_max_layers,
+    is_transformers_version_greater_or_equal_5,
+    matches_module_name_filter,
+)
 
 from defuser import DEBUG_ON
 
@@ -190,7 +195,7 @@ def _log_first_moe_block(model: torch.nn.Module, label: str) -> None:
             return
 
 
-def _handle_moe_modules(model: torch.nn.Module) -> list[str]:
+def _handle_moe_modules(model: torch.nn.Module, filter_rules=None) -> list[str]:
     """Handle fused MOE modules using transformers' linear_loop backend.
 
     Args:
@@ -213,7 +218,7 @@ def _handle_moe_modules(model: torch.nn.Module) -> list[str]:
         return []
 
     # Use transformers' experts interface
-    unfused = prepare_model_for_moe_quantization(model)
+    unfused = prepare_model_for_moe_quantization(model, filter_rules=filter_rules)
     if unfused:
         logger.info(f"Prepared {len(unfused)} MOE modules for quantization")
     return unfused
@@ -223,6 +228,7 @@ def apply_replacements(
         model: torch.nn.Module,
         auto_detect_moe: bool = True,
         max_layers: int | None = None,
+        filter_rules=None,
 ) -> torch.nn.Module:
     """
     Function to apply module replacements to a model.
@@ -238,6 +244,8 @@ def apply_replacements(
             (transformers 5.0+ pattern). Default is True.
         max_layers: If provided, only replace modules under ``layers.<idx>``
             where ``idx < max_layers``.
+        filter_rules: Optional regex rules selecting which candidate module paths
+            are allowed to be defused. Negative rules take priority over positive ones.
 
     Returns:
         The model with modules replaced.
@@ -247,11 +255,11 @@ def apply_replacements(
     # Run the generic MoE tensor defusion pass first so models with supported
     # fused experts can stay on their upstream module structure.
     if auto_detect_moe and is_transformers_version_greater_or_equal_5():
-        _handle_moe_modules(model)
+        _handle_moe_modules(model, filter_rules=filter_rules)
 
     # Fall back to replacement modules for any models that still need a custom
     # structural wrapper after the generic experts pass.
-    _apply_custom_replacements(model, max_layers=max_layers)
+    _apply_custom_replacements(model, max_layers=max_layers, filter_rules=filter_rules)
 
     _log_first_moe_block(model, "after replacement")
 
@@ -261,6 +269,7 @@ def apply_replacements(
 def _apply_custom_replacements(
         model: torch.nn.Module,
         max_layers: int | None = None,
+        filter_rules=None,
 ) -> list:
     """Scan model and replace registered modules with custom implementations.
 
@@ -271,6 +280,7 @@ def _apply_custom_replacements(
         List of (name, replacement_class) tuples for replaced modules.
     """
     replaced = []
+    module_name_filter = compile_module_name_filter(filter_rules)
 
     # Step 1: Collect all modules that need replacement
     if DEBUG_ON: logger.debug("Scanning for modules to replace")
@@ -280,6 +290,8 @@ def _apply_custom_replacements(
         if isinstance(module, ReplacementModuleBase):
             continue
         if not is_within_max_layers(name, max_layers):
+            continue
+        if not matches_module_name_filter(name, module_name_filter):
             continue
         class_name = module.__class__.__name__
         if ReplacementModuleBase.is_registered(class_name) and ReplacementModuleBase.get_replacement_class(
@@ -299,6 +311,10 @@ def _apply_custom_replacements(
                     logger.debug(
                         f"Skipping replacement for {name}: class changed from {class_name} to {module.__class__.__name__}"
                     )
+                continue
+            if not matches_module_name_filter(name, module_name_filter):
+                if DEBUG_ON:
+                    logger.debug(f"Skipping replacement for {name}: module path excluded by filter")
                 continue
             replacement_cls = ReplacementModuleBase.get_replacement_class(class_name)
             if not replacement_cls.is_to_be_replaced(module):

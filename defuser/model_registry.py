@@ -16,6 +16,39 @@ class PATCH(str, Enum):
 
 
 MODEL_CONFIG = {
+    "dbrx": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "deepseek_v2": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "deepseek_v3": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "dia": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "dots1": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "ernie4_5_moe": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "ernie4_5_vl_moe": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "exaone_moe": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "flex_olmo": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "glm": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "glm4": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
     "mixtral": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
         PATCH.REPLACE_MODULE: [
@@ -84,6 +117,10 @@ MODEL_CONFIG = {
             (
                 "transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe.Qwen3OmniMoeThinkerTextSparseMoeBlock",
                 "defuser.modeling.unfused_moe.qwen3_omni_moe.LinearQwen3OmniMoeThinkerTextSparseMoeBlock",
+            ),
+            (
+                "transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe.Qwen3OmniMoeTalkerTextSparseMoeBlock",
+                "defuser.modeling.unfused_moe.qwen3_omni_moe.LinearQwen3OmniMoeTalkerTextSparseMoeBlock",
             )
         ],
     },
@@ -95,6 +132,9 @@ MODEL_CONFIG = {
                 "defuser.modeling.unfused_moe.glm4_moe.LinearGlm4MoeMoE",
             )
         ],
+    },
+    "glm4_moe_lite": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
     "glm4v": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
@@ -116,7 +156,37 @@ MODEL_CONFIG = {
             ),
         ],
     },
+    "glm4v_moe": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "glm_image": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "glm_moe_dsa": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "glm_ocr": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
     "gpt_oss": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "granitemoe": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "granitemoehybrid": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "granitemoeshared": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "hunyuan_v1_moe": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "jamba": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "jetmoe": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
     "llama4": {
@@ -128,7 +198,40 @@ MODEL_CONFIG = {
             }
         ],
     },
+    "lfm2_moe": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "longcat_flash": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "minimax": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "minimax_m2": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "nemotron_h": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "olmoe": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "phi3": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "phi4_multimodal": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
     "phimoe": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "qwen3_vl_moe": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "solar_open": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "zamba2": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
 }
