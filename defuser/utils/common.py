@@ -6,16 +6,26 @@ import os
 # Adapted from intel/auto-round
 # at https://github.com/intel/auto-round/blob/main/auto_round/utils/common.py
 
+from collections.abc import Sequence
+from dataclasses import dataclass
 from functools import lru_cache
-import re
 from packaging import version
+import pcre
 
 
 # Match module paths like "...layers.0..." and capture the numeric layer index.
-_LAYER_NAME_RE = re.compile(r"(?:^|\.)layers\.(\d+)(?:\.|$)")
+_LAYER_NAME_RE = pcre.compile(r"(?:^|\.)layers\.(\d+)(?:\.|$)")
 
 TRUTHFUL = {"1", "true", "yes", "on", "y"}
 MIN_SUPPORTED_TRANSFORMERS_VERSION = "5.3.0"
+
+
+@dataclass(frozen=True)
+class ModuleNameFilter:
+    """Compiled include or exclude rules for module path matching."""
+
+    positive: tuple[pcre.Pattern, ...]
+    negative: tuple[pcre.Pattern, ...]
 
 
 def env_flag(name: str, default: str | bool | None = "0") -> bool:
@@ -71,3 +81,68 @@ def is_within_max_layers(module_name: str, max_layers: int | None) -> bool:
     if match is None:
         return True
     return int(match.group(1)) < max_layers
+
+
+def compile_module_name_filter(
+    filter_rules: Sequence[str] | ModuleNameFilter | None,
+) -> ModuleNameFilter | None:
+    """Compile user-facing module filter rules once for repeated matching.
+
+    Rules support three forms:
+    - ``+:regex`` explicit positive match
+    - ``-:regex`` explicit negative match
+    - ``regex`` implicit positive match
+
+    Negative rules take priority over positive rules during matching.
+    """
+    if filter_rules is None:
+        return None
+
+    if isinstance(filter_rules, ModuleNameFilter):
+        return filter_rules
+
+    if isinstance(filter_rules, (str, bytes)) or not isinstance(filter_rules, Sequence):
+        raise TypeError("filter must be a sequence of regex strings")
+
+    positive: list[pcre.Pattern] = []
+    negative: list[pcre.Pattern] = []
+    for raw_rule in filter_rules:
+        if not isinstance(raw_rule, str):
+            raise TypeError("filter rules must be strings")
+
+        if raw_rule.startswith("-:"):
+            bucket = negative
+            pattern = raw_rule[2:]
+        elif raw_rule.startswith("+:"):
+            bucket = positive
+            pattern = raw_rule[2:]
+        else:
+            bucket = positive
+            pattern = raw_rule
+
+        bucket.append(pcre.compile(pattern))
+
+    return ModuleNameFilter(
+        positive=tuple(positive),
+        negative=tuple(negative),
+    )
+
+
+def matches_module_name_filter(
+    module_name: str,
+    filter_rules: Sequence[str] | ModuleNameFilter | None,
+) -> bool:
+    """Return whether ``module_name`` is allowed by the configured filter rules."""
+    compiled = compile_module_name_filter(filter_rules)
+    if compiled is None:
+        return True
+
+    for pattern in compiled.negative:
+        if pattern.search(module_name):
+            return False
+
+    for pattern in compiled.positive:
+        if pattern.search(module_name):
+            return True
+
+    return False

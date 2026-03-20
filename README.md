@@ -33,8 +33,16 @@ from defuser import convert_model, replace_fused_blocks
 ```
 
 - `replace_fused_blocks(model_type)` patches supported HF model classes before `from_pretrained()` or direct model construction.
-- `convert_model(model, cleanup_original=True, max_layers=None)` converts an already loaded model in place. This is the runtime defusion path for supported post-load expert and MLP conversions, including `qwen3_5_moe` style checkpoints.
+- `convert_model(model, cleanup_original=True, max_layers=None, filter=None)` converts an already loaded model in place. This is the runtime defusion path for supported post-load expert and MLP conversions, including `qwen3_5_moe` style checkpoints.
 - Defuser is designed and CI-tested for `transformers>=5.3.0`, and support is only offered for that version range. Older versions log a warning on these public APIs and are skipped as unsupported.
+
+`filter` is an optional list of PCRE regex rules evaluated against full module paths such as `model.layers.0.mlp.experts`:
+
+- `+:regex` explicitly includes matching candidate module paths
+- `-:regex` explicitly excludes matching candidate module paths
+- `regex` is shorthand for `+:regex`
+- negative rules take priority over positive rules
+- when `filter` is provided, a candidate module is defused only if it matches at least one positive rule and no negative rules
 
 ## Supported Models
 
@@ -89,6 +97,20 @@ from defuser import convert_model
 
 converted = convert_model(model)
 print(converted)  # True when runtime defusion happened
+```
+
+Use `filter` when only specific blocks should be defused:
+
+```python
+from defuser import convert_model
+
+convert_model(
+    model,
+    filter=[
+        r"+:^model\.layers\.0\.mlp\.experts$",
+        r"-:^model\.layers\.0\.mlp\.experts\.shared_",
+    ],
+)
 ```
 
 ## Real Qwen3.5 MoE Example

@@ -32,6 +32,7 @@ from logbar import LogBar
 from torch import nn
 
 from defuser.model_registry import MODEL_CONFIG, PATCH
+from defuser.utils.common import compile_module_name_filter, matches_module_name_filter
 from defuser.utils.device import clear_memory, to_meta
 
 from defuser import DEBUG_ON
@@ -693,7 +694,11 @@ def _unfuse_experts_weights_inplace(
     return True
 
 
-def prepare_model_for_moe_quantization(model: nn.Module, implementation: str = LINEAR_LOOP_IMPL) -> list[str]:
+def prepare_model_for_moe_quantization(
+    model: nn.Module,
+    implementation: str = LINEAR_LOOP_IMPL,
+    filter_rules=None,
+) -> list[str]:
     """Prepare a model for MOE quantization using transformers' experts interface.
 
     This function:
@@ -722,7 +727,10 @@ def prepare_model_for_moe_quantization(model: nn.Module, implementation: str = L
     unfused_modules = []
     decorated_unfused_modules = []
     experts_defuse_specs = _model_experts_defuse_specs(model)
+    module_name_filter = compile_module_name_filter(filter_rules)
     for name, module in model.named_modules():
+        if not matches_module_name_filter(name, module_name_filter):
+            continue
         spec = _matching_experts_defuse_spec(module, experts_defuse_specs)
         if spec is not None and _unfuse_experts_weights_inplace(
             module,
