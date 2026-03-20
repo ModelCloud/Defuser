@@ -45,7 +45,10 @@ def register_model_patch(model_type: str):
 def patch_qwen3_omni_text_class() -> list[str]:
     """Teach HF init code how to initialize unfused qwen3-omni thinker experts."""
     from transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe import Qwen3OmniMoeForConditionalGeneration, Qwen3OmniMoePreTrainedModel
-    from defuser.modeling.unfused_moe.qwen3_omni_moe import LinearQwen3OmniMoeThinkerTextSparseMoeBlock
+    from defuser.modeling.unfused_moe.qwen3_omni_moe import (
+        LinearQwen3OmniMoeTalkerTextSparseMoeBlock,
+        LinearQwen3OmniMoeThinkerTextSparseMoeBlock,
+    )
     orig_init_weights = Qwen3OmniMoePreTrainedModel._init_weights
 
     def patched_init_weights(self, module):
@@ -53,7 +56,7 @@ def patch_qwen3_omni_text_class() -> list[str]:
             orig_init_weights(self, module)
         except AttributeError as e:
             # fallback for unfused experts
-            if isinstance(module, LinearQwen3OmniMoeThinkerTextSparseMoeBlock):
+            if isinstance(module, (LinearQwen3OmniMoeThinkerTextSparseMoeBlock, LinearQwen3OmniMoeTalkerTextSparseMoeBlock)):
                 std = self.config.initializer_range
                 experts = module.experts
 
@@ -63,9 +66,18 @@ def patch_qwen3_omni_text_class() -> list[str]:
                     torch.nn.init.normal_(experts.up_proj.weight, 0.0, std)
                 if hasattr(experts, "down_proj"):
                     torch.nn.init.normal_(experts.down_proj.weight, 0.0, std)
+                if isinstance(experts, torch.nn.ModuleList):
+                    for expert in experts:
+                        torch.nn.init.normal_(expert.gate_proj.weight, 0.0, std)
+                        torch.nn.init.normal_(expert.up_proj.weight, 0.0, std)
+                        torch.nn.init.normal_(expert.down_proj.weight, 0.0, std)
 
                 if hasattr(module, "gate"):
                     torch.nn.init.normal_(module.gate.weight, 0.0, std)
+                if hasattr(module, "shared_expert"):
+                    module.shared_expert._is_hf_initialized = True
+                if hasattr(module, "shared_expert_gate"):
+                    torch.nn.init.normal_(module.shared_expert_gate.weight, 0.0, std)
             else:
                 raise e
 
