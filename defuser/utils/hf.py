@@ -12,11 +12,10 @@ from typing import Final
 import torch
 import transformers
 from logbar import LogBar
-from packaging import version
 from transformers import AutoConfig
 
 from defuser.model_registry import MODEL_CONFIG
-from defuser.utils.common import env_flag, warn_if_public_api_transformers_unsupported
+from defuser.utils.common import env_flag, is_version_at_least, warn_if_public_api_transformers_unsupported
 
 logger = LogBar(__name__)
 
@@ -77,8 +76,7 @@ def pre_check_config(model_name: str | torch.nn.Module):
     cfg = MODEL_CONFIG[model_type]
 
     min_ver = cfg.get("min_transformers_version")
-    tf_ver = version.parse(transformers.__version__)
-    if min_ver and tf_ver < version.parse(min_ver):
+    if min_ver and not is_version_at_least(transformers.__version__, min_ver):
         return False
     try:
         file_path = get_file_path_via_model_name(model_name, "model.safetensors.index.json")

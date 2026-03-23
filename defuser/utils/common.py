@@ -28,6 +28,35 @@ class ModuleNameFilter:
     negative: tuple[pcre.Pattern, ...]
 
 
+def _parse_version(value: str | version.Version) -> version.Version:
+    """Return a normalized packaging version object."""
+    if isinstance(value, version.Version):
+        return value
+    return version.parse(value)
+
+
+def is_version_at_least(
+    installed_version: str | version.Version,
+    minimum_version: str | version.Version,
+) -> bool:
+    """Return whether a version meets a minimum, allowing same-release dev snapshots.
+
+    Hugging Face main-branch builds report versions like ``5.3.0-dev`` which
+    packaging normalizes to ``5.3.0.dev0`` and orders before ``5.3.0``. Defuser
+    treats those dev snapshots as satisfying the corresponding stable floor.
+    """
+    installed = _parse_version(installed_version)
+    minimum = _parse_version(minimum_version)
+
+    if installed >= minimum:
+        return True
+
+    if installed.is_devrelease:
+        return version.parse(installed.base_version) >= minimum
+
+    return False
+
+
 def env_flag(name: str, default: str | bool | None = "0") -> bool:
     """Return ``True`` when an env var is set to a truthy value."""
 
@@ -46,14 +75,14 @@ def is_transformers_version_greater_or_equal_5():
     """Cache the coarse ``transformers>=5`` capability check used by fast paths."""
     import transformers
 
-    return version.parse(transformers.__version__) >= version.parse("5.0.0")
+    return is_version_at_least(transformers.__version__, "5.0.0")
 
 
 def is_supported_transformers_version() -> bool:
     """Return whether the installed transformers version is supported by Defuser's public API."""
     import transformers
 
-    return version.parse(transformers.__version__) >= version.parse(MIN_SUPPORTED_TRANSFORMERS_VERSION)
+    return is_version_at_least(transformers.__version__, MIN_SUPPORTED_TRANSFORMERS_VERSION)
 
 
 def warn_if_public_api_transformers_unsupported(api_name: str, logger) -> bool:
