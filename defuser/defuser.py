@@ -12,10 +12,10 @@ from defuser.modeling.model_patches import apply_model_class_patches, apply_mode
 from defuser.modeling.update_module import update_module
 from defuser.utils.common import (
     MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    is_version_at_least,
     is_supported_transformers_version,
     warn_if_public_api_transformers_unsupported,
 )
-from packaging import version
 import transformers
 from logbar import LogBar
 
@@ -69,7 +69,7 @@ def replace_fused_blocks(model_type: str) -> bool:
             custom_class = getattr(custom_module, custom_class_name)
             setattr(orig_module, orig_class_name, custom_class)
 
-            if version.parse(transformers.__version__) >= version.parse(MIN_SUPPORTED_TRANSFORMERS_VERSION):
+            if is_version_at_least(transformers.__version__, MIN_SUPPORTED_TRANSFORMERS_VERSION):
                 from transformers import conversion_mapping
 
                 if not hasattr(conversion_mapping, "orig_get_checkpoint_conversion_mapping"):
@@ -102,8 +102,7 @@ def check_model_compatibility(model: nn.Module) -> bool:
         return False
 
     min_ver = MODEL_CONFIG[model_type].get("min_transformers_version")
-    current_ver = version.parse(transformers.__version__)
-    if min_ver and current_ver < version.parse(min_ver):
+    if min_ver and not is_version_at_least(transformers.__version__, min_ver):
         logger.warn(
             f"Skip conversion for model_type={model_type}: "
             f"requires transformers>={min_ver}, current version is {transformers.__version__}."
