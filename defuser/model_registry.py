@@ -135,6 +135,12 @@ MODEL_CONFIG = {
     },
     "glm4_moe_lite": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+        PATCH.REPLACE_MODULE: [
+            (
+                "transformers.models.glm4_moe_lite.modeling_glm4_moe_lite.Glm4MoeLiteMoE",
+                "defuser.modeling.unfused_moe.glm4_moe_lite.LinearGlm4MoeLiteMoE",
+            )
+        ],
     },
     "glm4v": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,

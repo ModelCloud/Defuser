@@ -53,6 +53,7 @@ Defuser currently supports the following `transformers==5.3.0` `model_type` valu
 | Model type | Defused op performed |
 | --- | --- |
 | `glm4_moe` | Replaces `Glm4MoeMoE` with a defused per-expert linear MoE block. |
+| `glm4_moe_lite` | Replaces `Glm4MoeLiteMoE` with a defused per-expert linear MoE block.|
 | `glm4v` | Replaces the fused text MLP with split `gate_proj`, `up_proj`, and `down_proj` layers. Also splits fused checkpoint `mlp.gate_up_proj.weight` into `mlp.gate_proj.weight` + `mlp.up_proj.weight`. |
 | `mixtral` | Replaces `MixtralSparseMoeBlock` with `LinearMixtralSparseMoeBlock`. Also remaps legacy Mixtral checkpoint keys and splits fused expert `gate_up_proj` tensors into per-expert `gate_proj` and `up_proj`, plus per-expert `down_proj`. |
 | `qwen2_moe` | Replaces `Qwen2MoeSparseMoeBlock` with a defused per-expert linear MoE block. |

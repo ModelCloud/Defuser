@@ -10,6 +10,11 @@ from safetensors.torch import save_file
 from torch import nn
 from transformers.core_model_loading import WeightConverter
 from transformers.models.glm4_moe.modeling_glm4_moe import Glm4MoeConfig, Glm4MoeForCausalLM, Glm4MoeMoE
+from transformers.models.glm4_moe_lite.configuration_glm4_moe_lite import Glm4MoeLiteConfig
+from transformers.models.glm4_moe_lite.modeling_glm4_moe_lite import (
+    Glm4MoeLiteForCausalLM,
+    Glm4MoeLiteMoE,
+)
 from transformers.models.glm4v.configuration_glm4v import Glm4vConfig
 from transformers.models.glm4v.modeling_glm4v import Glm4vForConditionalGeneration
 from transformers.models.mixtral.configuration_mixtral import MixtralConfig
@@ -48,6 +53,7 @@ from defuser.checkpoint_ops import OwnedChunk, SplitFusedExpertDownProj, SplitFu
 from defuser.model_registry import MODEL_CONFIG, PATCH
 from defuser.modeling.replace_modules import ReplacementModuleBase, apply_replacements, materialize_model
 from defuser.modeling.unfused_moe.glm4_moe import LinearGlm4MoeMoE
+from defuser.modeling.unfused_moe.glm4_moe_lite import LinearGlm4MoeLiteMoE
 from defuser.modeling.unfused_moe.mixtral import LinearMixtralSparseMoeBlock
 from defuser.modeling.unfused_moe.qwen2_moe import LinearQwen2MoeSparseMoeBlock
 from defuser.modeling.unfused_moe.qwen3_moe import LinearQwen3MoeSparseMoeBlock
@@ -61,9 +67,9 @@ from defuser.utils.common import MIN_SUPPORTED_TRANSFORMERS_VERSION
 
 
 
-def _tiny_moe_config(config_cls):
+def _tiny_moe_config(config_cls, num_hidden_layers: int=1):
     return config_cls(
-        num_hidden_layers=1,
+        num_hidden_layers=num_hidden_layers,
         hidden_size=64,
         intermediate_size=128,
         moe_intermediate_size=32,
@@ -936,6 +942,29 @@ def test_defused_models_preserve_output_router_logits_capture():
         assert len(outputs.router_logits) == 1
         assert outputs.router_logits[0].shape == (3, model.config.num_experts)
 
+def test_glm4_moe_lite():
+    model_type = "glm4_moe_lite"
+    replace_fused_blocks(model_type)
+
+    model = Glm4MoeLiteForCausalLM(_tiny_moe_config(Glm4MoeLiteConfig, num_hidden_layers=2))
+    assert model.config.model_type == model_type
+
+    # In GLM4-MoE-Lite, the `mlp.experts` module is present only starting from the second layer.
+    converted = convert_model(model, max_layers=2)
+    assert not converted
+
+    _assert_unfused_expert_module(model.model.layers[1].mlp.experts)
+
+
+def test_glm4_moe_lite_defused_forward_matches_fused_math():
+    config = _tiny_moe_config(Glm4MoeLiteConfig)
+    hidden_states = torch.randn(2, 3, config.hidden_size, dtype=torch.float32)
+
+    _assert_sparse_moe_defused_matches_fused_math(
+        Glm4MoeLiteMoE(config),
+        LinearGlm4MoeLiteMoE(config),
+        hidden_states,
+    )
 
 def test_glm4v_checkpoint_mapping_splits_gate_up_proj():
     from defuser.defuser import get_checkpoint_conversion_mapping
