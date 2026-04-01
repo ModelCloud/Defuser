@@ -382,13 +382,13 @@ META_MODEL_CASES = [
     },
     {
         "model_type": "glm4_moe_lite",
-        "mode": "convert",
+        "mode": "replace",
         "model_module": "transformers.models.glm4_moe_lite.modeling_glm4_moe_lite",
         "model_class": "Glm4MoeLiteForCausalLM",
         "config_module": "transformers.models.glm4_moe_lite.configuration_glm4_moe_lite",
         "config_class": "Glm4MoeLiteConfig",
-        "target_class_paths": ("transformers.models.glm4_moe_lite.modeling_glm4_moe_lite.Glm4MoeLiteNaiveMoe",),
-        "validator": "experts",
+        "target_class_paths": ("defuser.modeling.unfused_moe.glm4_moe_lite.LinearGlm4MoeLiteMoE",),
+        "validator": "sparse_block",
     },
     {
         "model_type": "glm4v",
