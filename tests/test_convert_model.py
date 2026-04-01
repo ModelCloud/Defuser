@@ -84,6 +84,7 @@ def _tiny_moe_config(config_cls, num_hidden_layers: int=1):
 
 def _tiny_qwen3_omni_config():
     return Qwen3OmniMoeConfig(
+        initializer_range=0.02,
         enable_audio_output=False,
         thinker_config={
             "text_config": {
