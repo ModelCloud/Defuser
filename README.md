@@ -23,7 +23,7 @@ Depending on the model family, Defuser can:
 
 - patch a supported model class before load so HF instantiates a defused block directly
 - split fused tensors such as `gate_up_proj` into `gate_proj` + `up_proj`
-- convert 3D expert tensors into numbered expert `nn.Linear` modules
+- convert 3D expert tensors, including registered expert buffers, into numbered expert `nn.Linear` modules
 - preserve the original fused math while presenting a naive module structure again
 
 Public API:
@@ -33,8 +33,9 @@ from defuser import convert_model, replace_fused_blocks
 ```
 
 - `replace_fused_blocks(model_type)` patches supported HF model classes before `from_pretrained()` or direct model construction.
-- `convert_model(model, cleanup_original=True, max_layers=None, filter=None)` converts an already loaded model in place. This is the runtime defusion path for supported post-load expert and MLP conversions, including `qwen3_5_moe` style checkpoints.
+- `convert_model(model, cleanup_original=False, max_layers=None, filter=None)` converts an already loaded model in place. This is the runtime defusion path for supported post-load expert and MLP conversions, including `qwen3_5_moe` style checkpoints.
 - Defuser is designed and CI-tested for `transformers>=5.3.0`, and support is only offered for that version range. Older versions log a warning on these public APIs and are skipped as unsupported.
+- Some model families appear in both support tables. Full models can be prepatched with `replace_fused_blocks(...)`, while standalone fused expert modules from those same families can still be runtime-defused with `convert_model(...)`.
 
 `filter` is an optional list of PCRE regex rules evaluated against full module paths such as `model.layers.0.mlp.experts`:
 
@@ -46,7 +47,7 @@ from defuser import convert_model, replace_fused_blocks
 
 ## Supported Models
 
-Defuser currently supports the following `transformers==5.3.0` `model_type` values.
+Defuser currently supports the following `transformers>=5.3.0` `model_type` values.
 
 ### `replace_fused_blocks(model_type)` before load
 
@@ -65,7 +66,7 @@ Defuser currently supports the following `transformers==5.3.0` `model_type` valu
 
 | Pattern | Supported model types | Defused op performed |
 | --- | --- | --- |
-| Standard routed expert tensors | `deepseek_v2`, `dots1`, `ernie4_5_moe`, `ernie4_5_vl_moe`, `exaone_moe`, `flex_olmo`, `glm4_moe_lite`, `glm4v_moe`, `hunyuan_v1_moe`, `jamba`, `lfm2_moe`, `minimax`, `minimax_m2`, `olmoe`, `qwen3_vl_moe`, `solar_open` | Splits fused expert tensors into numbered expert `nn.Linear` modules with per-expert `gate_proj`, `up_proj`, and `down_proj`. |
+| Standard routed expert tensors | `deepseek_v2`, `dots1`, `ernie4_5_moe`, `ernie4_5_vl_moe`, `exaone_moe`, `flex_olmo`, `glm4_moe_lite`, `glm4v_moe`, `hunyuan_v1_moe`, `jamba`, `lfm2_moe`, `minimax`, `minimax_m2`, `olmoe`, `qwen3_vl_moe`, `solar_open` | Splits fused expert tensors or registered expert buffers into numbered expert `nn.Linear` modules with per-expert `gate_proj`, `up_proj`, and `down_proj`. |
 | Mixed sparse and shared experts | `deepseek_v3`, `glm_moe_dsa`, `qwen3_5_moe`, `qwen3_5_moe_text` | Runtime expert tensor defusion for routed experts while preserving the model's shared-expert path. |
 | Transposed or packed expert tensors | `gpt_oss`, `phimoe` | Splits transposed fused expert `gate_up_proj` tensors into per-expert `gate_proj` + `up_proj`, preserves expert bias when present, and converts expert tensors into numbered expert `nn.Linear` modules. |
 | Flattened expert layout | `dbrx` | Rebuilds the flattened DBRX expert FFN weights into numbered expert `gate_proj`, `up_proj`, and `down_proj` `nn.Linear` modules. |
@@ -99,6 +100,8 @@ from defuser import convert_model
 converted = convert_model(model)
 print(converted)  # True when runtime defusion happened
 ```
+
+`convert_model(model)` also preserves meta-device construction for supported meta-initialized models, so structural validation can run without materializing weights.
 
 Use `filter` when only specific blocks should be defused:
 

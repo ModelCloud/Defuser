@@ -292,33 +292,64 @@ def _install_instance_forward(module: nn.Module, implementation: str) -> None:
 def _detect_expert_projections(module: nn.Module) -> dict[str, dict]:
     """Detect which expert projections exist in the module.
 
-    This function scans the module for any 3D nn.Parameter attributes.
-    It first checks known projection names, then discovers any unknown 3D parameters.
+    This function scans the module for any registered 3D Parameter / Tensor
+    attributes. It first checks known projection names, then discovers any
+    unknown 3D registered tensors.
 
     Returns:
         Dict mapping projection names to their config, only for projections that exist
-        as 3D nn.Parameter in the module.
+        as 3D registered Parameter / Tensor in the module.
     """
     detected = {}
+    # Only inspect registered tensors here. Scanning arbitrary attributes can
+    # trigger unrelated properties such as Transformers' `loss_function`.
+    local_tensors = {
+        name: tensor
+        for registry in (module._parameters, module._buffers)
+        for name, tensor in registry.items()
+        if isinstance(tensor, torch.Tensor)
+    }
 
     # First, check known projection patterns
     for proj_name, config in KNOWN_PROJECTION_PATTERNS.items():
-        param = getattr(module, proj_name, None)
-        if param is not None and isinstance(param, nn.Parameter) and param.dim() == 3:
+        param = local_tensors.get(proj_name)
+        if param is not None and param.dim() == 3:
             detected[proj_name] = config
 
-    # If no known patterns found, scan for any 3D Parameter (future-proofing)
+    # If no known patterns found, scan for any 3D registered tensor (future-proofing)
     if not detected:
-        for attr_name in dir(module):
+        for attr_name, param in local_tensors.items():
             if attr_name.startswith("_"):
                 continue
-            param = getattr(module, attr_name, None)
-            if param is not None and isinstance(param, nn.Parameter) and param.dim() == 3:
+            if param is not None and param.dim() == 3:
                 # Use default config for unknown projections
                 if DEBUG_ON: logger.debug(f"Discovered unknown 3D projection: {attr_name}")
                 detected[attr_name] = {"is_input_proj": True, "output_multiplier": 1}
 
     return detected
+
+
+def _get_registered_tensor(module: nn.Module, name: str) -> torch.Tensor | None:
+    """Return a direct registered parameter or buffer without touching properties."""
+
+    tensor = module._parameters.get(name)
+    if isinstance(tensor, torch.Tensor):
+        return tensor
+
+    tensor = module._buffers.get(name)
+    if isinstance(tensor, torch.Tensor):
+        return tensor
+
+    return None
+
+
+def _set_registered_tensor_like(module: nn.Module, name: str, tensor: torch.Tensor, source: torch.Tensor) -> None:
+    """Register ``tensor`` using the same parameter-vs-buffer kind as ``source``."""
+
+    if isinstance(source, nn.Parameter):
+        module.register_parameter(name, nn.Parameter(tensor, requires_grad=source.requires_grad))
+    else:
+        module.register_buffer(name, tensor)
 
 
 def _experts_supports_decorator(module: nn.Module) -> bool:
@@ -334,11 +365,11 @@ def _experts_supports_decorator(module: nn.Module) -> bool:
     return hasattr(forward_method, "__wrapped__")
 
 
-def _infer_dimensions(param: nn.Parameter, config: dict, is_transposed: bool) -> tuple[int, int]:
+def _infer_dimensions(param: torch.Tensor, config: dict, is_transposed: bool) -> tuple[int, int]:
     """Infer input and output dimensions for a projection.
 
     Args:
-        param: The 3D parameter (num_experts, dim1, dim2)
+        param: The 3D projection tensor (num_experts, dim1, dim2)
         config: Projection config with is_input_proj and output_multiplier
         is_transposed: Whether weights are stored transposed
 
@@ -370,7 +401,7 @@ def _unfuse_single_projection(
         dtype: torch.dtype,
         target_device: torch.device,
 ) -> list | None:
-    """Unfuse a single projection from 3D Parameter to a list of Linear layers.
+    """Unfuse a single projection from a 3D registered tensor to Linear layers.
 
     Optimized to keep peak device memory low while preserving the module's
     original device placement:
@@ -390,8 +421,8 @@ def _unfuse_single_projection(
     Returns:
         List of Linear layers, or None if projection doesn't exist
     """
-    param = getattr(module, proj_name, None)
-    if param is None or not isinstance(param, nn.Parameter) or param.dim() != 3:
+    param = _get_registered_tensor(module, proj_name)
+    if param is None or param.dim() != 3:
         return None
 
     # Get projection config
@@ -402,17 +433,17 @@ def _unfuse_single_projection(
 
     # Check for bias
     bias_name = f"{proj_name}_bias"
-    bias_param = getattr(module, bias_name, None)
-    has_bias = bias_param is not None
+    bias_param = _get_registered_tensor(module, bias_name)
+    has_bias = isinstance(bias_param, torch.Tensor)
 
     source_device = param.device
     is_meta = source_device.type == "meta"
-    weight_requires_grad = param.requires_grad
+    weight_requires_grad = param.requires_grad if isinstance(param, nn.Parameter) else False
 
     # Prepare weight slices on CPU in batch (single D2H transfer + batch transpose)
     if not is_meta:
         # Single transfer: GPU -> CPU (or no-op if already on CPU)
-        weights_cpu = param.data.cpu()  # (num_experts, dim1, dim2)
+        weights_cpu = param.detach().cpu()  # (num_experts, dim1, dim2)
         if is_transposed:
             # Batch transpose: (num_experts, in, out) -> (num_experts, out, in)
             weights_cpu = weights_cpu.transpose(1, 2)
@@ -425,12 +456,12 @@ def _unfuse_single_projection(
         weight_slices = weights_cpu.unbind(0)
 
         if has_bias:
-            bias_cpu = bias_param.data.cpu()
+            bias_cpu = bias_param.detach().cpu()
             # Ensure contiguous — bias may come from a chunk split (Phase 1)
             if not bias_cpu.is_contiguous():
                 bias_cpu = bias_cpu.contiguous()
             bias_slices = bias_cpu.unbind(0)
-            bias_requires_grad = bias_param.requires_grad
+            bias_requires_grad = bias_param.requires_grad if isinstance(bias_param, nn.Parameter) else False
 
         # Drop the original fused parameter before allocating the defused
         # per-expert linears back on the original device.
@@ -588,7 +619,7 @@ def _unfuse_experts_weights_inplace(
 
     # Get first projection to determine num_experts and layout
     first_proj_name = next(iter(detected_projections))
-    first_param = getattr(module, first_proj_name)
+    first_param = _get_registered_tensor(module, first_proj_name)
     num_experts = first_param.shape[0]
 
     # Detect if transposed
@@ -608,15 +639,15 @@ def _unfuse_experts_weights_inplace(
     dtype = first_param.dtype
     target_device = first_param.device if first_param.device.type != "meta" else "cpu"
 
-    # Phase 1: Split fused projections (e.g., gate_up_proj -> gate_proj + up_proj) into separate 3D params
+    # Phase 1: Split fused projections (e.g., gate_up_proj -> gate_proj + up_proj) into separate 3D tensors
     extra_projections = {}
     fused_to_remove = []
     for proj_name, config in detected_projections.items():
         split_into = config.get("split_into")
         if not split_into:
             continue
-        param = getattr(module, proj_name, None)
-        if param is None or not isinstance(param, nn.Parameter) or param.dim() != 3:
+        param = _get_registered_tensor(module, proj_name)
+        if param is None or param.dim() != 3:
             continue
         # Split along output dimension
         split_dim = 2 if is_transposed else 1
@@ -624,17 +655,17 @@ def _unfuse_experts_weights_inplace(
 
         # Also split bias if present (e.g., gate_up_proj_bias -> gate_proj_bias + up_proj_bias)
         bias_name = f"{proj_name}_bias"
-        bias_param = getattr(module, bias_name, None)
+        bias_param = _get_registered_tensor(module, bias_name)
         bias_splits = None
-        if bias_param is not None and isinstance(bias_param, nn.Parameter) and bias_param.dim() == 2:
+        if isinstance(bias_param, torch.Tensor) and bias_param.dim() == 2:
             bias_splits = bias_param.chunk(len(split_into), dim=1)
 
         for i, (split_name, split_param) in enumerate(zip(split_into, split_params)):
             # Avoid .contiguous() here — _unfuse_single_projection will handle it
             # during batch transpose/unbind, saving a full-tensor copy
-            setattr(module, split_name, nn.Parameter(split_param))
+            _set_registered_tensor_like(module, split_name, split_param, param)
             if bias_splits is not None:
-                setattr(module, f"{split_name}_bias", nn.Parameter(bias_splits[i]))
+                _set_registered_tensor_like(module, f"{split_name}_bias", bias_splits[i], bias_param)
             extra_projections[split_name] = KNOWN_PROJECTION_PATTERNS.get(
                 split_name, {"is_input_proj": True, "output_multiplier": 1}
             )
@@ -649,7 +680,7 @@ def _unfuse_experts_weights_inplace(
         del detected_projections[name]
     detected_projections.update(extra_projections)
 
-    # Phase 2: Unfuse all 3D params into per-expert Linear layers
+    # Phase 2: Unfuse all 3D tensors into per-expert Linear layers
     proj_linears = {}  # proj_name -> [Linear_expert0, Linear_expert1, ...]
     for proj_name in detected_projections:
         linears = _unfuse_single_projection(module, proj_name, num_experts, is_transposed, dtype, target_device)

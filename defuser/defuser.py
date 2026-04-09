@@ -36,7 +36,24 @@ def get_checkpoint_conversion_mapping(model_type):
 
 
 class PatchError(Exception):
+    """Raised when Defuser cannot patch a registered Transformers class."""
+
     pass
+
+
+def _has_prebuilt_replacements(model: nn.Module, model_type: str) -> bool:
+    """Detect models that were already instantiated with registry-backed replacements."""
+    replacement_paths = MODEL_CONFIG[model_type].get(PATCH.REPLACE_MODULE, [])
+    replacement_class_paths = {custom_path for _, custom_path in replacement_paths}
+    if not replacement_class_paths:
+        return False
+
+    for module in model.modules():
+        class_path = f"{module.__class__.__module__}.{module.__class__.__name__}"
+        if class_path in replacement_class_paths:
+            return True
+
+    return False
 
 
 def replace_fused_blocks(model_type: str) -> bool:
@@ -202,9 +219,10 @@ def convert_model(
 
     apply_model_patches(model, max_layers=max_layers, filter_rules=filter)
 
-    # If fused blocks have already been structurally replaced at load model before,
-    # there is no need to perform runtime defusing again
-    if MODEL_CONFIG[model.config.model_type].get(PATCH.REPLACE_MODULE):
+    # Full models patched at construction time already contain the defused
+    # replacement modules, but standalone experts from those model types can
+    # still use runtime tensor defusion.
+    if _has_prebuilt_replacements(model, model.config.model_type):
         return False
 
     # Perform runtime defusing of fused projections
