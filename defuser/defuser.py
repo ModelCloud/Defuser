@@ -36,11 +36,13 @@ def get_checkpoint_conversion_mapping(model_type):
 
 
 class PatchError(Exception):
+    """Raised when Defuser cannot patch a registered Transformers class."""
+
     pass
 
 
 def _has_prebuilt_replacements(model: nn.Module, model_type: str) -> bool:
-    """Return True when ``model`` already contains registry-backed replacement modules."""
+    """Detect models that were already instantiated with registry-backed replacements."""
     replacement_paths = MODEL_CONFIG[model_type].get(PATCH.REPLACE_MODULE, [])
     replacement_class_paths = {custom_path for _, custom_path in replacement_paths}
     if not replacement_class_paths:

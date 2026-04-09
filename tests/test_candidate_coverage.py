@@ -17,12 +17,16 @@ from defuser.model_registry import MODEL_CONFIG
 
 
 class _DummyLayer(nn.Module):
+    """Wrap one candidate module so convert_model sees a layer-shaped path."""
+
     def __init__(self, module: nn.Module):
         super().__init__()
         self.module = module
 
 
 class _DummyModel(nn.Module):
+    """Minimal model shell for exercising runtime conversion helpers."""
+
     def __init__(self, model_type: str, module: nn.Module):
         super().__init__()
         self.config = getattr(module, "config", None)
@@ -33,10 +37,12 @@ class _DummyModel(nn.Module):
 
 
 def _load(module_path: str, attr_name: str):
+    """Import one symbol lazily so candidate tables stay compact."""
     return getattr(import_module(module_path), attr_name)
 
 
 def _normalize_attr_value(obj, attr: str, value):
+    """Preserve list-valued config shapes when tests shrink scalar attributes."""
     current = getattr(obj, attr)
     if isinstance(current, list) and not isinstance(value, list):
         width = len(current) or 1
@@ -45,6 +51,7 @@ def _normalize_attr_value(obj, attr: str, value):
 
 
 def _build_config(case: dict):
+    """Build a tiny but valid config for one candidate module case."""
     config = _load(case["config_module"], case["config_name"])()
     sub_attr = case.get("sub_attr")
     if sub_attr is not None:
@@ -89,6 +96,7 @@ def _build_config(case: dict):
 
 
 def _build_module(case: dict) -> nn.Module:
+    """Instantiate one candidate module in the format its constructor expects."""
     module_cls = _load(case["module_path"], case["class_name"])
     kind = case.get("kind", "config")
     if kind == "parallel":
@@ -102,6 +110,7 @@ def _build_module(case: dict) -> nn.Module:
 
 
 def _wrapped_model(case: dict) -> tuple[_DummyModel, nn.Module]:
+    """Seed one module deterministically and wrap it as a dummy model."""
     module = _build_module(case)
     generator = torch.Generator(device="cpu").manual_seed(0)
     with torch.no_grad():
@@ -112,10 +121,12 @@ def _wrapped_model(case: dict) -> tuple[_DummyModel, nn.Module]:
 
 
 def _patched_module(model: _DummyModel) -> nn.Module:
+    """Return the converted test module from the dummy model wrapper."""
     return model.layers[0].module
 
 
 def _assert_expert_container(module: nn.Module, attrs: tuple[str, ...]) -> None:
+    """Verify that expert ``0`` exposes the expected defused projections."""
     assert hasattr(module, "0")
     expert0 = getattr(module, "0")
     for attr in attrs:
@@ -123,6 +134,7 @@ def _assert_expert_container(module: nn.Module, attrs: tuple[str, ...]) -> None:
 
 
 def _standard_hidden(case: dict) -> torch.Tensor:
+    """Generate default hidden states for sparse-MoE candidate coverage tests."""
     return torch.randn(case.get("hidden_shape", (5, case["input_dim"])), dtype=torch.float32)
 
 
@@ -564,11 +576,13 @@ ALL_CANDIDATE_MODEL_TYPES = {
 
 
 def test_model_registry_covers_all_scanned_candidates():
+    """Every scanned candidate model type should be represented in the registry."""
     assert ALL_CANDIDATE_MODEL_TYPES.issubset(MODEL_CONFIG)
 
 
 @pytest.mark.parametrize("case", STANDARD_MOE_CASES, ids=[case["model_type"] for case in STANDARD_MOE_CASES])
 def test_standard_moe_candidates_convert_and_preserve_forward(case):
+    """Standard sparse-MoE candidates should convert without changing outputs."""
     torch.manual_seed(0)
     model, original_module = _wrapped_model(case)
     hidden_states = _standard_hidden(case)
@@ -604,6 +618,7 @@ def test_standard_moe_candidates_convert_and_preserve_forward(case):
 
 @pytest.mark.parametrize("case", PARALLEL_CASES, ids=[case["model_type"] for case in PARALLEL_CASES])
 def test_parallel_expert_candidates_convert_and_preserve_forward(case):
+    """Parallel expert containers should convert without changing outputs."""
     torch.manual_seed(0)
     model, original_module = _wrapped_model(case)
     expert_size = [2, 1, 0, 3]
@@ -627,6 +642,7 @@ def test_parallel_expert_candidates_convert_and_preserve_forward(case):
 
 @pytest.mark.parametrize("case", DENSE_CASES, ids=[case["label"] for case in DENSE_CASES])
 def test_dense_candidates_convert_and_preserve_forward(case):
+    """Dense split-gate MLP candidates should preserve forward results after conversion."""
     torch.manual_seed(0)
     model, original_module = _wrapped_model(case)
     hidden_states = torch.randn(3, case["hidden_size"], dtype=torch.float32)
@@ -655,6 +671,7 @@ def test_dense_candidates_convert_and_preserve_forward(case):
 
 
 def test_runtime_model_patches_respect_max_layers():
+    """Runtime-only patches should stop once ``max_layers`` is reached."""
     module0 = _build_module(next(case for case in DENSE_CASES if case["label"] == "phi3"))
     module1 = _build_module(next(case for case in DENSE_CASES if case["label"] == "phi3"))
 

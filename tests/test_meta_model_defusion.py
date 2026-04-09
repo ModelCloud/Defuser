@@ -15,10 +15,12 @@ from defuser.model_registry import MODEL_CONFIG
 
 
 def _load(module_path: str, attr_name: str):
+    """Import one symbol lazily so the model case table stays readable."""
     return getattr(import_module(module_path), attr_name)
 
 
 def _normalize_attr_value(obj, attr: str, value):
+    """Preserve list-valued config fields when shrinking configs for meta tests."""
     current = getattr(obj, attr)
     if isinstance(current, list) and not isinstance(value, list):
         width = len(current) or 1
@@ -27,12 +29,14 @@ def _normalize_attr_value(obj, attr: str, value):
 
 
 def _set_if_has(obj, **kwargs) -> None:
+    """Apply overrides only to attributes exposed by the current config node."""
     for attr, value in kwargs.items():
         if hasattr(obj, attr):
             setattr(obj, attr, _normalize_attr_value(obj, attr, value))
 
 
 def _mutate_common_config_tree(config, visited: set[int] | None = None) -> None:
+    """Shrink nested configs recursively so meta-model construction stays lightweight."""
     if config is None or isinstance(config, (int, float, str, bool, list, tuple, dict)):
         return
 
@@ -133,6 +137,7 @@ def _mutate_common_config_tree(config, visited: set[int] | None = None) -> None:
 
 
 def _build_model_config(case: dict):
+    """Construct a small config tree for one registered public model type."""
     config = _load(case["config_module"], case["config_class"])()
     _mutate_common_config_tree(config)
 
@@ -188,6 +193,7 @@ def _build_model_config(case: dict):
 
 
 def _find_module_hits(model, class_paths: tuple[str, ...]) -> list[tuple[str, str]]:
+    """Collect modules whose class path matches one of the expected targets."""
     hits = []
     wanted = set(class_paths)
     for name, module in model.named_modules():
@@ -198,16 +204,19 @@ def _find_module_hits(model, class_paths: tuple[str, ...]) -> list[tuple[str, st
 
 
 def _assert_meta_parameters(module) -> None:
+    """Assert that one module keeps all of its parameters on meta."""
     for _, param in module.named_parameters(recurse=True):
         assert param.is_meta
 
 
 def _assert_all_model_parameters_meta(model) -> None:
+    """Assert that conversion does not materialize weights during meta tests."""
     for _, param in model.named_parameters():
         assert param.is_meta
 
 
 def _validate_defused_module(case: dict, module) -> None:
+    """Run the case-specific structural checks on one converted module."""
     kind = case["validator"]
 
     if kind == "experts":
@@ -737,11 +746,13 @@ META_MODEL_CASES = [
 
 
 def test_meta_model_cases_cover_registered_public_models():
+    """Meta-model coverage should stay aligned with the public registry."""
     assert {case["model_type"] for case in META_MODEL_CASES} == set(MODEL_CONFIG) - {"qwen3_5_moe_text"}
 
 
 @pytest.mark.parametrize("case", META_MODEL_CASES, ids=[case["model_type"] for case in META_MODEL_CASES])
 def test_each_model_defuses_direct_meta_model(case):
+    """Each registered public model should expose the expected defused modules on meta."""
     if case["mode"] == "replace":
         replace_fused_blocks(case["model_type"])
 

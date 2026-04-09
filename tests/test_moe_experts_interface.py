@@ -26,6 +26,7 @@ class _UnknownExpertsWithLossProperty(nn.Module):
 
 
 def test_detect_expert_projections_ignores_unrelated_properties() -> None:
+    """Projection detection should ignore unrelated properties on expert fixtures."""
     module = _UnknownExpertsWithLossProperty()
 
     detected = _detect_expert_projections(module)
@@ -46,6 +47,7 @@ class _BufferBackedExperts(nn.Module):
 
 
 def test_unfuse_experts_supports_registered_buffers() -> None:
+    """Buffer-backed fused experts should unfuse into per-expert Linear layers."""
     module = _BufferBackedExperts()
     expected_gate_proj = module.gate_up_proj[0, :3].clone()
     expected_up_proj = module.gate_up_proj[0, 3:].clone()
