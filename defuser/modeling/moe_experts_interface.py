@@ -300,19 +300,23 @@ def _detect_expert_projections(module: nn.Module) -> dict[str, dict]:
         as 3D nn.Parameter in the module.
     """
     detected = {}
+    # Only inspect registered parameters here. Scanning arbitrary attributes can
+    # trigger unrelated properties such as Transformers' `loss_function`.
+    local_parameters = {
+        name: param for name, param in module._parameters.items() if isinstance(param, nn.Parameter)
+    }
 
     # First, check known projection patterns
     for proj_name, config in KNOWN_PROJECTION_PATTERNS.items():
-        param = getattr(module, proj_name, None)
+        param = local_parameters.get(proj_name)
         if param is not None and isinstance(param, nn.Parameter) and param.dim() == 3:
             detected[proj_name] = config
 
     # If no known patterns found, scan for any 3D Parameter (future-proofing)
     if not detected:
-        for attr_name in dir(module):
+        for attr_name, param in local_parameters.items():
             if attr_name.startswith("_"):
                 continue
-            param = getattr(module, attr_name, None)
             if param is not None and isinstance(param, nn.Parameter) and param.dim() == 3:
                 # Use default config for unknown projections
                 if DEBUG_ON: logger.debug(f"Discovered unknown 3D projection: {attr_name}")
