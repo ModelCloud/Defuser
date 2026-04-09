@@ -18,10 +18,18 @@ def _load(module_path: str, attr_name: str):
     return getattr(import_module(module_path), attr_name)
 
 
+def _normalize_attr_value(obj, attr: str, value):
+    current = getattr(obj, attr)
+    if isinstance(current, list) and not isinstance(value, list):
+        width = len(current) or 1
+        return [value for _ in range(width)]
+    return value
+
+
 def _set_if_has(obj, **kwargs) -> None:
     for attr, value in kwargs.items():
         if hasattr(obj, attr):
-            setattr(obj, attr, value)
+            setattr(obj, attr, _normalize_attr_value(obj, attr, value))
 
 
 def _mutate_common_config_tree(config, visited: set[int] | None = None) -> None:

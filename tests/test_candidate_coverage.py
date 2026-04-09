@@ -36,6 +36,14 @@ def _load(module_path: str, attr_name: str):
     return getattr(import_module(module_path), attr_name)
 
 
+def _normalize_attr_value(obj, attr: str, value):
+    current = getattr(obj, attr)
+    if isinstance(current, list) and not isinstance(value, list):
+        width = len(current) or 1
+        return [value for _ in range(width)]
+    return value
+
+
 def _build_config(case: dict):
     config = _load(case["config_module"], case["config_name"])()
     sub_attr = case.get("sub_attr")
@@ -73,10 +81,10 @@ def _build_config(case: dict):
         "dropout_rate": 0.0,
     }.items():
         if hasattr(config, attr):
-            setattr(config, attr, value)
+            setattr(config, attr, _normalize_attr_value(config, attr, value))
     for attr, value in case.get("config_updates", {}).items():
         if hasattr(config, attr):
-            setattr(config, attr, value)
+            setattr(config, attr, _normalize_attr_value(config, attr, value))
     return config
 
 
@@ -87,7 +95,10 @@ def _build_module(case: dict) -> nn.Module:
         return module_cls(case["num_experts"], case["input_size"], case["output_size"]).eval()
     if kind == "zamba2":
         return module_cls(_build_config(case), num_fwd_mem_blocks=1, block_id=0).eval()
-    return module_cls(_build_config(case)).eval()
+    config = _build_config(case)
+    if case["model_type"] == "ernie4_5_vl_moe" and isinstance(getattr(config, "moe_intermediate_size", None), list):
+        return module_cls(config, intermediate_size=config.moe_intermediate_size[0]).eval()
+    return module_cls(config).eval()
 
 
 def _wrapped_model(case: dict) -> tuple[_DummyModel, nn.Module]:
