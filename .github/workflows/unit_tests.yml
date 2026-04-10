@@ -104,7 +104,7 @@ jobs:
 
       - name: Activate uv env
         run: |
-          env_name="cu${{ env.CUDA_VERSION }}_torch${{ env.TORCH_VERSION }}_py${{ env.PYTHON_VERSION }}_test_${{ matrix.test_script }}"
+          env_name="defuser_test_cu${{ env.CUDA_VERSION }}_torch${{ env.TORCH_VERSION }}_py${{ env.PYTHON_VERSION }}_${{ matrix.test_script }}"
           /opt/uv/setup_uv_venv.sh $env_name
 
       - name: Setup uv env
