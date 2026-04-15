@@ -160,7 +160,7 @@ jobs:
           mkdir -p artifacts
           pytest --durations=0 tests/${{ matrix.test_script }}.py --junitxml=artifacts/${{ runner.os }}-${{ matrix.test_script }}.xml
 
-  prepare-compat:
+  prepare-setuptools:
     runs-on: ubuntu-latest
     outputs:
       versions: ${{ steps.parser.outputs.versions || '[]' }}
@@ -175,8 +175,8 @@ jobs:
           versions=$(python .github/scripts/ci_loop_versions.py setuptools ">=77.0.1,<83")
           echo "versions=$versions" >> "$GITHUB_OUTPUT"
 
-  check-compat:
-    needs: prepare-compat
+  check-setuptools:
+    needs: prepare-setuptools
     if: needs.prepare.outputs.versions != '[]'
     runs-on: ubuntu-latest
     strategy:
