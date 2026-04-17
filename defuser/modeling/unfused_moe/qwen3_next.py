@@ -33,6 +33,7 @@ class LinearQwen3NextSparseMoeBlock(nn.Module):
         """Route tokens exactly like HF Qwen3-Next MoE, then run explicit experts."""
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
+        shared_expert_output = self.shared_expert(hidden_states)
         _, routing_weights, selected_experts = self.gate(hidden_states)
         routing_weights = routing_weights.to(hidden_states.dtype)
         final_hidden_states = run_routed_experts(
@@ -43,7 +44,6 @@ class LinearQwen3NextSparseMoeBlock(nn.Module):
             self.num_experts,
         )
 
-        shared_expert_output = self.shared_expert(hidden_states)
         shared_expert_output = F.sigmoid(self.shared_expert_gate(hidden_states)) * shared_expert_output
 
         final_hidden_states = final_hidden_states + shared_expert_output
