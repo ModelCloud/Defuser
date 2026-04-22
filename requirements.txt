@@ -4,4 +4,4 @@
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 pypcre>=0.2.13
 transformers
-logbar>=0.4.1
+logbar>=0.4.3
