@@ -195,6 +195,9 @@ MODEL_CONFIG = {
     "jetmoe": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
+    "laguna": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
     "llama4": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
         PATCH.EXPERTS_DEFUSE: [
