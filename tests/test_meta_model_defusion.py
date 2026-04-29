@@ -173,6 +173,10 @@ def _build_model_config(case: dict):
     elif model_type == "lfm2_moe":
         config.layer_types = ["full_attention", "short_conv"]
         config.num_dense_layers = 0
+    elif model_type == "laguna":
+        config.layer_types = ["full_attention"] * config.num_hidden_layers
+        config.mlp_layer_types = ["dense"] + ["sparse"] * (config.num_hidden_layers - 1)
+        config.num_attention_heads_per_layer = [config.num_attention_heads] * config.num_hidden_layers
     elif model_type == "qwen3_omni_moe":
         config.enable_audio_output = True
         config.talker_config.spatial_merge_size = 2
@@ -536,6 +540,16 @@ META_MODEL_CASES = [
         "target_class_paths": ("transformers.models.jetmoe.modeling_jetmoe.JetMoeParallelExperts",),
         "validator": "parallel",
         "min_targets": 4,
+    },
+    {
+        "model_type": "laguna",
+        "mode": "convert",
+        "model_module": "transformers.models.laguna.modeling_laguna",
+        "model_class": "LagunaForCausalLM",
+        "config_module": "transformers.models.laguna.configuration_laguna",
+        "config_class": "LagunaConfig",
+        "target_class_paths": ("transformers.models.laguna.modeling_laguna.LagunaExperts",),
+        "validator": "experts",
     },
     {
         "model_type": "lfm2_moe",

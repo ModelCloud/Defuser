@@ -17,6 +17,7 @@ from transformers.models.glm4_moe_lite.modeling_glm4_moe_lite import (
 )
 from transformers.models.glm4v.configuration_glm4v import Glm4vConfig
 from transformers.models.glm4v.modeling_glm4v import Glm4vForConditionalGeneration
+from transformers.models.laguna.modeling_laguna import LagunaConfig, LagunaForCausalLM
 from transformers.models.mixtral.configuration_mixtral import MixtralConfig
 from transformers.models.mixtral.modeling_mixtral import MixtralForCausalLM, MixtralSparseMoeBlock
 from transformers.models.qwen2_moe.modeling_qwen2_moe import (
@@ -249,6 +250,29 @@ def _tiny_gpt_oss_config():
         num_key_value_heads=4,
         num_local_experts=4,
         num_experts_per_tok=2,
+        pad_token_id=0,
+        bos_token_id=1,
+        eos_token_id=2,
+    )
+
+
+def _tiny_laguna_config():
+    return LagunaConfig(
+        vocab_size=128,
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_attention_heads_per_layer=[4, 4],
+        num_key_value_heads=1,
+        head_dim=16,
+        num_experts=4,
+        num_experts_per_tok=2,
+        moe_intermediate_size=32,
+        shared_expert_intermediate_size=32,
+        mlp_layer_types=["dense", "sparse"],
+        layer_types=["full_attention", "full_attention"],
+        hidden_act="silu",
         pad_token_id=0,
         bos_token_id=1,
         eos_token_id=2,
@@ -1172,6 +1196,61 @@ def test_gpt_oss_split_forward_matches_fused_math():
 
     # The split experts path should exactly reproduce the original fused experts math.
     torch.testing.assert_close(actual, expected)
+
+
+def test_laguna():
+    from transformers.models.laguna.modeling_laguna import LagunaExperts
+
+    model = LagunaForCausalLM(_tiny_laguna_config())
+    assert model.config.model_type == "laguna"
+
+    original_moe_block = model.model.layers[1].mlp
+    experts = original_moe_block.experts
+    assert isinstance(experts, LagunaExperts)
+
+    hidden_dim = experts.gate_up_proj.shape[-1]
+    intermediate_dim = experts.gate_up_proj.shape[1] // 2
+
+    expected_gate = experts.gate_up_proj[0, :intermediate_dim, :hidden_dim].contiguous().clone()
+    expected_up = experts.gate_up_proj[0, intermediate_dim:, :hidden_dim].contiguous().clone()
+    expected_down = experts.down_proj[0, :hidden_dim, :intermediate_dim].contiguous().clone()
+
+    converted = convert_model(model, cleanup_original=False, max_layers=2)
+    assert converted
+
+    experts = model.model.layers[1].mlp.experts
+    _assert_unfused_expert_module(experts)
+    expert0 = getattr(experts, "0")
+
+    materialize_model(model.model.layers[1])
+
+    torch.testing.assert_close(expert0.gate_proj.weight, expected_gate)
+    torch.testing.assert_close(expert0.up_proj.weight, expected_up)
+    torch.testing.assert_close(expert0.down_proj.weight, expected_down)
+
+
+def test_laguna_split_forward_matches_fused_math():
+    model = LagunaForCausalLM(_tiny_laguna_config())
+    fused_experts = model.model.layers[1].mlp.experts
+
+    hidden_states = torch.randn(5, model.config.hidden_size, dtype=torch.float32)
+    top_k_index = torch.zeros((hidden_states.size(0), 1), dtype=torch.long)
+    top_k_weights = torch.ones((hidden_states.size(0), 1), dtype=hidden_states.dtype)
+
+    with torch.no_grad():
+        expected = fused_experts(hidden_states, top_k_index, top_k_weights)
+
+    converted = convert_model(model, cleanup_original=False, max_layers=2)
+    assert converted
+
+    split_experts = model.model.layers[1].mlp.experts
+    _assert_unfused_expert_module(split_experts)
+    materialize_model(model.model.layers[1])
+    with torch.no_grad():
+        actual = split_experts(hidden_states, top_k_index, top_k_weights)
+
+    torch.testing.assert_close(actual, expected)
+
 
 def test_llama4():
     from transformers.models.llama4.modeling_llama4 import Llama4TextMoe
