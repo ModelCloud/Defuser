@@ -167,9 +167,20 @@ def _build_model_config(case: dict):
     elif model_type == "glm_moe_dsa":
         config.mlp_layer_types = ["sparse"] * config.num_hidden_layers
     elif model_type == "granitemoehybrid":
-        config.layer_types = ["attention", "mamba"]
+        # Keep this meta-structure test on the attention path. The mamba path
+        # lazy-loads optional hub kernels during construction, which is outside
+        # the Defuser behavior being validated here.
+        config.layer_types = ["attention", "attention"]
         config.shared_intermediate_size = 64
         config.mamba_n_heads = 8
+    elif model_type == "jamba":
+        # Keep this meta-structure test on the attention path. The mamba path
+        # lazy-loads optional hub kernels during construction, which is outside
+        # the Defuser behavior being validated here.
+        config.attn_layer_period = 1
+        config.attn_layer_offset = 0
+        config.expert_layer_period = 1
+        config.expert_layer_offset = 0
     elif model_type == "lfm2_moe":
         config.layer_types = ["full_attention", "short_conv"]
         config.num_dense_layers = 0
@@ -177,6 +188,11 @@ def _build_model_config(case: dict):
         config.layer_types = ["full_attention"] * config.num_hidden_layers
         config.mlp_layer_types = ["dense"] + ["sparse"] * (config.num_hidden_layers - 1)
         config.num_attention_heads_per_layer = [config.num_attention_heads] * config.num_hidden_layers
+    elif model_type == "nemotron_h":
+        # Keep this meta-structure test on MoE blocks. Mamba blocks lazy-load
+        # optional hub kernels during construction, which is outside the
+        # Defuser behavior being validated here.
+        config.layers_block_type = ["moe"] * config.num_hidden_layers
     elif model_type == "qwen3_omni_moe":
         config.enable_audio_output = True
         config.talker_config.spatial_merge_size = 2
@@ -192,6 +208,12 @@ def _build_model_config(case: dict):
             num_key_value_heads=1,
             head_dim=16,
         )
+    elif model_type == "zamba2":
+        # Zamba2 always constructs Mamba layers, even for hybrid blocks. Keep
+        # the optional hub kernels disabled while preserving hybrid MLP targets.
+        config.use_mamba_kernels = False
+        config.layers_block_type = ["hybrid"] * config.num_hidden_layers
+        config.hybrid_layer_ids = list(range(config.num_hidden_layers))
 
     return config
 

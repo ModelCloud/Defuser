@@ -1,6 +1,6 @@
 <div align=center>
 <img width="50%" alt="image" src="https://github.com/user-attachments/assets/f801617b-8959-474a-a565-6b8897e2fcbf" />
-<h1 align="center">Defuser</h1>
+<h1 align="center">Defuser 🔧</h1>
 </div>
 
 <p align="center">
@@ -11,47 +11,47 @@
     <a href="https://huggingface.co/modelcloud/"><img src="https://img.shields.io/badge/🤗%20Hugging%20Face-ModelCloud-%23ff8811.svg"></a>
 </p>
 
-Defuser converts select Hugging Face Transformers `5.3.0+` fused or stacked MoE and MLP blocks back into plain, per-expert `nn.Linear` modules. It keeps the forward math intact while exposing individual projections again so quantizers, activation capture, debugging hooks, and checkpoint tooling can work against a simple module layout instead of fused expert tensors.
+🧩 Defuser converts select Hugging Face Transformers `5.3.0+` fused or stacked MoE and MLP blocks back into plain, per-expert `nn.Linear` modules. It keeps the forward math intact while exposing individual projections again so quantizers, activation capture, debugging hooks, and checkpoint tooling can work against a simple module layout instead of fused expert tensors.
 
-Defuser is designed and CI-tested for `transformers>=5.3.0`, and support is only offered for that version range.
+✅ Defuser is designed and CI-tested for `transformers>=5.3.0`, and support is only offered for that version range.
 
-## Purpose
+## 🎯 Purpose
 
 Defuser exists for cases where newer Transformers modeling code optimizes model structure in ways that are good for runtime, but harder for tooling that needs direct access to individual projections.
 
 Depending on the model family, Defuser can:
 
-- patch a supported model class before load so HF instantiates a defused block directly
-- split fused tensors such as `gate_up_proj` into `gate_proj` + `up_proj`
-- convert 3D expert tensors, including registered expert buffers, into numbered expert `nn.Linear` modules
-- preserve the original fused math while presenting a naive module structure again
+- 🧵 patch a supported model class before load so HF instantiates a defused block directly
+- ✂️ split fused tensors such as `gate_up_proj` into `gate_proj` + `up_proj`
+- 🧱 convert 3D expert tensors, including registered expert buffers, into numbered expert `nn.Linear` modules
+- 🧮 preserve the original fused math while presenting a naive module structure again
 
-Public API:
+🛠️ Public API:
 
 ```python
 from defuser import convert_model, replace_fused_blocks
 ```
 
-- `replace_fused_blocks(model_type)` patches supported HF model classes before `from_pretrained()` or direct model construction.
-- `convert_model(model, cleanup_original=False, max_layers=None, filter=None)` converts an already loaded model in place. This is the runtime defusion path for supported post-load expert and MLP conversions, including `qwen3_5_moe` style checkpoints.
-- Defuser is designed and CI-tested for `transformers>=5.3.0`, and support is only offered for that version range. Older versions log a warning on these public APIs and are skipped as unsupported.
-- Some model families appear in both support tables. Full models can be prepatched with `replace_fused_blocks(...)`, while standalone fused expert modules from those same families can still be runtime-defused with `convert_model(...)`.
+- 🧰 `replace_fused_blocks(model_type)` patches supported HF model classes before `from_pretrained()` or direct model construction.
+- 🔄 `convert_model(model, cleanup_original=False, max_layers=None, filter=None)` converts an already loaded model in place. This is the runtime defusion path for supported post-load expert and MLP conversions, including `qwen3_5_moe` style checkpoints.
+- 🧪 Defuser is designed and CI-tested for `transformers>=5.3.0`, and support is only offered for that version range. Older versions log a warning on these public APIs and are skipped as unsupported.
+- 🧭 Some model families appear in both support tables. Full models can be prepatched with `replace_fused_blocks(...)`, while standalone fused expert modules from those same families can still be runtime-defused with `convert_model(...)`.
 
 `filter` is an optional list of PCRE regex rules evaluated against full module paths such as `model.layers.0.mlp.experts`:
 
-- `+:regex` explicitly includes matching candidate module paths
-- `-:regex` explicitly excludes matching candidate module paths
-- `regex` is shorthand for `+:regex`
-- negative rules take priority over positive rules
-- when `filter` is provided, a candidate module is defused only if it matches at least one positive rule and no negative rules
+- ✅ `+:regex` explicitly includes matching candidate module paths
+- 🚫 `-:regex` explicitly excludes matching candidate module paths
+- ➕ `regex` is shorthand for `+:regex`
+- 🛡️ negative rules take priority over positive rules
+- 🎯 when `filter` is provided, a candidate module is defused only if it matches at least one positive rule and no negative rules
 
-## Supported Models
+## ✅ Supported Models
 
 Defuser currently supports the following `transformers>=5.3.0` `model_type` values.
 
-### `replace_fused_blocks(model_type)` before load
+### 🧰 `replace_fused_blocks(model_type)` before load
 
-| Model type | Defused op performed |
+| Model type | Defused op performed ⚙️ |
 | --- | --- |
 | `glm4_moe` | Replaces `Glm4MoeMoE` with a defused per-expert linear MoE block. |
 | `glm4_moe_lite` | Replaces `Glm4MoeLiteMoE` with a defused per-expert linear MoE block.|
@@ -62,11 +62,11 @@ Defuser currently supports the following `transformers>=5.3.0` `model_type` valu
 | `qwen3_next` | Replaces `Qwen3NextSparseMoeBlock` with a defused per-expert linear MoE block. |
 | `qwen3_omni_moe` | Replaces both thinker and talker text sparse MoE blocks with defused per-expert linear blocks and applies small runtime compatibility patches for text `forward()` and `generate()`. |
 
-### `convert_model(model)` after load
+### 🔄 `convert_model(model)` after load
 
-| Pattern | Supported model types | Defused op performed |
+| Pattern | Supported model types | Defused op performed ⚙️ |
 | --- | --- | --- |
-| Standard routed expert tensors | `deepseek_v2`, `dots1`, `ernie4_5_moe`, `ernie4_5_vl_moe`, `exaone_moe`, `flex_olmo`, `glm4_moe_lite`, `glm4v_moe`, `hunyuan_v1_moe`, `jamba`, `lfm2_moe`, `minimax`, `minimax_m2`, `olmoe`, `qwen3_vl_moe`, `solar_open` | Splits fused expert tensors or registered expert buffers into numbered expert `nn.Linear` modules with per-expert `gate_proj`, `up_proj`, and `down_proj`. |
+| Standard routed expert tensors 🧱 | `deepseek_v2`, `dots1`, `ernie4_5_moe`, `ernie4_5_vl_moe`, `exaone_moe`, `flex_olmo`, `glm4_moe_lite`, `glm4v_moe`, `hunyuan_v1_moe`, `jamba`, `laguna`, `lfm2_moe`, `minimax`, `minimax_m2`, `olmoe`, `qwen3_vl_moe`, `solar_open` | Splits fused expert tensors or registered expert buffers into numbered expert `nn.Linear` modules with per-expert `gate_proj`, `up_proj`, and `down_proj`. |
 | Mixed sparse and shared experts | `deepseek_v3`, `glm_moe_dsa`, `qwen3_5_moe`, `qwen3_5_moe_text` | Runtime expert tensor defusion for routed experts while preserving the model's shared-expert path. |
 | Transposed or packed expert tensors | `gpt_oss`, `phimoe` | Splits transposed fused expert `gate_up_proj` tensors into per-expert `gate_proj` + `up_proj`, preserves expert bias when present, and converts expert tensors into numbered expert `nn.Linear` modules. |
 | Flattened expert layout | `dbrx` | Rebuilds the flattened DBRX expert FFN weights into numbered expert `gate_proj`, `up_proj`, and `down_proj` `nn.Linear` modules. |
@@ -76,7 +76,7 @@ Defuser currently supports the following `transformers>=5.3.0` `model_type` valu
 | Routed experts with identity experts | `longcat_flash` | Defuses routed experts into numbered `gate_proj`, `up_proj`, and `down_proj` modules and preserves zero or identity experts. |
 | Fused dense `gate_up_proj` MLPs | `dia`, `glm`, `glm4`, `glm_image`, `glm_ocr`, `phi3`, `phi4_multimodal`, `zamba2` | Splits fused dense `gate_up_proj` layers into `gate_proj` + `up_proj` and updates the block `forward()` to preserve the original MLP math. |
 
-## Workflow Summary
+## 🔁 Workflow Summary
 
 Use `replace_fused_blocks()` for model families that Defuser can patch before load:
 
@@ -103,7 +103,7 @@ print(converted)  # True when runtime defusion happened
 
 `convert_model(model)` also preserves meta-device construction for supported meta-initialized models, so structural validation can run without materializing weights.
 
-Use `filter` when only specific blocks should be defused:
+Use `filter` when only specific blocks should be defused 🎯:
 
 ```python
 from defuser import convert_model
@@ -117,11 +117,11 @@ convert_model(
 )
 ```
 
-## Real Qwen3.5 MoE Example
+## 🧪 Real Qwen3.5 MoE Example
 
 The example below is written for the `transformers==5.3.0` public API surface and uses the real Hugging Face model `Qwen/Qwen3.5-35B-A3B-Instruct`. Defuser supports `transformers>=5.3.0`.
 
-### Fused Weights Before And After
+### 🔬 Fused Weights Before And After
 
 Before `convert_model(model)`:
 
@@ -149,7 +149,7 @@ After `convert_model(model)`:
 +-----------------------------------------------------------------+--------------------------------------+
 ```
 
-### Sample 1: Inspect The Conversion In Place
+### 🧭 Sample 1: Inspect The Conversion In Place
 
 ```python
 from defuser import convert_model
@@ -187,7 +187,7 @@ print(after[:6])
 # ]
 ```
 
-### Sample 2: Convert And Keep Using The Model Normally
+### 🚀 Sample 2: Convert And Keep Using The Model Normally
 
 ```python
 import torch
