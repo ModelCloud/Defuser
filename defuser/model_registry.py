@@ -25,6 +25,9 @@ MODEL_CONFIG = {
     "deepseek_v3": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
+    "deepseek_v4": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
     "dia": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
