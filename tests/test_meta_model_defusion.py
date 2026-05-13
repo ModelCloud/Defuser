@@ -332,6 +332,17 @@ META_MODEL_CASES = [
         "min_targets": 2,
     },
     {
+        "model_type": "deepseek_v4",
+        "mode": "convert",
+        "model_module": "transformers.models.deepseek_v4.modeling_deepseek_v4",
+        "model_class": "DeepseekV4ForCausalLM",
+        "config_module": "transformers.models.deepseek_v4.configuration_deepseek_v4",
+        "config_class": "DeepseekV4Config",
+        "target_class_paths": ("transformers.models.deepseek_v4.modeling_deepseek_v4.DeepseekV4Experts",),
+        "validator": "experts",
+        "min_targets": 2,
+    },
+    {
         "model_type": "dia",
         "mode": "convert",
         "model_module": "transformers.models.dia.modeling_dia",

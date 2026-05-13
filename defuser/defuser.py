@@ -75,7 +75,6 @@ def replace_fused_blocks(model_type: str) -> bool:
         try:
             orig_module = importlib.import_module(orig_module_path)
             custom_module = importlib.import_module(custom_module_path)
-            print("orig_module", orig_module, orig_class_name)
             # Validate class existence before patching
             if not hasattr(orig_module, orig_class_name):
                 raise PatchError(f"Original class[{orig_class_name}] not found: {orig_module}")
