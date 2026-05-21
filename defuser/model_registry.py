@@ -69,6 +69,9 @@ MODEL_CONFIG = {
     "qwen3_5_moe_text": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
+    "interns2_preview": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
     "qwen3_next": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
         PATCH.REPLACE_MODULE: [
