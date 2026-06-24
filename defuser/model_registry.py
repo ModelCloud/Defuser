@@ -199,6 +199,9 @@ MODEL_CONFIG = {
     "hunyuan_v1_moe": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
+    "hy_v3": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
     "jamba": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
