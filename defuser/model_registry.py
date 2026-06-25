@@ -16,6 +16,9 @@ class PATCH(str, Enum):
 
 
 MODEL_CONFIG = {
+    "cohere2_moe": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
     "dbrx": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
