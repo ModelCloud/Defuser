@@ -16,6 +16,9 @@ class PATCH(str, Enum):
 
 
 MODEL_CONFIG = {
+    "cohere2_moe": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
     "dbrx": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
@@ -62,8 +65,12 @@ MODEL_CONFIG = {
         ],
         "checkpoint_mapping": [
             WeightRenaming(".block_sparse_moe.", ".mlp."),
-            WeightRenaming(r".experts.(\d+).w1.weight", r".experts.\1.gate_proj.weight"),
-            WeightRenaming(r".experts.(\d+).w2.weight", r".experts.\1.down_proj.weight"),
+            WeightRenaming(
+                r".experts.(\d+).w1.weight", r".experts.\1.gate_proj.weight"
+            ),
+            WeightRenaming(
+                r".experts.(\d+).w2.weight", r".experts.\1.down_proj.weight"
+            ),
             WeightRenaming(r".experts.(\d+).w3.weight", r".experts.\1.up_proj.weight"),
             WeightConverter(
                 source_patterns=".experts.gate_up_proj",
@@ -124,7 +131,7 @@ MODEL_CONFIG = {
             (
                 "transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe.Qwen3OmniMoeTalkerTextSparseMoeBlock",
                 "defuser.modeling.unfused_moe.qwen3_omni_moe.LinearQwen3OmniMoeTalkerTextSparseMoeBlock",
-            )
+            ),
         ],
     },
     "glm4_moe": {
@@ -168,6 +175,9 @@ MODEL_CONFIG = {
     "glm4v_moe": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
+    "glm4v_moe_text": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
     "glm_image": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
@@ -192,6 +202,9 @@ MODEL_CONFIG = {
     "hunyuan_v1_moe": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
+    "hy_v3": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
     "jamba": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
@@ -210,6 +223,15 @@ MODEL_CONFIG = {
             }
         ],
     },
+    "llama4_text": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+        PATCH.EXPERTS_DEFUSE: [
+            {
+                "module_class": "transformers.models.llama4.modeling_llama4.Llama4TextExperts",
+                "forward_impl": "batched_input",
+            }
+        ],
+    },
     "lfm2_moe": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
@@ -220,6 +242,9 @@ MODEL_CONFIG = {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
     "minimax_m2": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "minimax_m3_vl": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
     "nemotron_h": {
