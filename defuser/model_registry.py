@@ -244,6 +244,9 @@ MODEL_CONFIG = {
     "minimax_m2": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
+    "minimax_m3_vl": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
     "nemotron_h": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
