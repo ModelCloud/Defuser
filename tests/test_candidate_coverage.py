@@ -352,6 +352,22 @@ STANDARD_MOE_CASES = [
         "expert_attrs": ("gate_proj", "up_proj", "down_proj"),
     },
     {
+        "model_type": "solar_open2",
+        "module_path": "transformers.models.solar_open2.modeling_solar_open2",
+        "class_name": "SolarOpen2Experts",
+        "config_module": "transformers.models.solar_open2.configuration_solar_open2",
+        "config_name": "SolarOpen2Config",
+        "config_updates": {
+            "hidden_size": 64,
+            "moe_intermediate_size": 32,
+            "n_routed_experts": 4,
+            "hidden_act": "silu",
+        },
+        "input_dim": 64,
+        "route_indices": [[0], [1], [2], [3], [0]],
+        "expert_attrs": ("gate_proj", "up_proj", "down_proj"),
+    },
+    {
         "model_type": "dbrx",
         "module_path": "transformers.models.dbrx.modeling_dbrx",
         "class_name": "DbrxExperts",
@@ -571,6 +587,7 @@ ALL_CANDIDATE_MODEL_TYPES = {
     "qwen3_omni_moe",
     "qwen3_vl_moe",
     "solar_open",
+    "solar_open2",
     "zamba2",
 }
 

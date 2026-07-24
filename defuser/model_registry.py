@@ -25,6 +25,12 @@ MODEL_CONFIG = {
     "deepseek_v2": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
+    "deepseek_ocr2": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "inkling_mm_model": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
     "deepseek_v3": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
@@ -266,6 +272,9 @@ MODEL_CONFIG = {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
     "solar_open": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "solar_open2": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
     "zamba2": {
