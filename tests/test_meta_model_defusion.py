@@ -780,6 +780,17 @@ META_MODEL_CASES = [
         "validator": "experts",
     },
     {
+        "model_type": "solar_open2",
+        "mode": "convert",
+        "model_module": "transformers.models.solar_open2.modeling_solar_open2",
+        "model_class": "SolarOpen2ForCausalLM",
+        "config_module": "transformers.models.solar_open2.configuration_solar_open2",
+        "config_class": "SolarOpen2Config",
+        "target_class_paths": ("transformers.models.solar_open2.modeling_solar_open2.SolarOpen2Experts",),
+        "validator": "experts",
+        "min_targets": 2,
+    },
+    {
         "model_type": "zamba2",
         "mode": "convert",
         "model_module": "transformers.models.zamba2.modeling_zamba2",
