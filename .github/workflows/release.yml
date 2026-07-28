@@ -48,7 +48,7 @@ jobs:
         with:
           ref: ${{ env.ref }}
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: 3.14
           cache: 'pip'
@@ -89,7 +89,7 @@ jobs:
           submodules: recursive
           ref: ${{ env.ref }}
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.py }}
           cache: 'pip'
