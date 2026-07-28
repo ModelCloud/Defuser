@@ -4,7 +4,7 @@
 # Contact: qubitium@modelcloud.ai, x.com/qubitium
 
 [build-system]
-requires = ["setuptools>=77.0.1,<83"]
+requires = ["setuptools>=77.0.1,<84"]
 build-backend = "setuptools.build_meta"
 
 [project]
