@@ -301,6 +301,17 @@ def _validate_defused_module(case: dict, module) -> None:
 
 META_MODEL_CASES = [
     {
+        "model_type": "axk2",
+        "mode": "convert",
+        "model_module": "transformers.models.axk2.modeling_axk2",
+        "model_class": "AXK2ForCausalLM",
+        "config_module": "transformers.models.axk2.configuration_axk2",
+        "config_class": "AXK2Config",
+        "target_class_paths": ("transformers.models.axk2.modeling_axk2.AXK2Experts",),
+        "validator": "experts",
+        "min_targets": 1,
+    },
+    {
         "model_type": "dbrx",
         "mode": "convert",
         "model_module": "transformers.models.dbrx.modeling_dbrx",

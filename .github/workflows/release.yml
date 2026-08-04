@@ -54,7 +54,7 @@ jobs:
           cache: 'pip'
 
       - name: Install requirements
-        run: pip install pip build setuptools twine packaging -U
+        run: pip install pip build "setuptools>=77.0.1,<83" twine packaging -U
 
       - name: Build package
         run: |
@@ -102,7 +102,7 @@ jobs:
         run: |
           which python
           python -V
-          pip install build setuptools twine packaging -U
+          pip install build "setuptools>=77.0.1,<83" twine packaging -U
 
       - name: Compile
         run: |
