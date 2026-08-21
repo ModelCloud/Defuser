@@ -155,6 +155,8 @@ def _build_model_config(case: dict):
         config.ffn_config.ffn_act_fn = {"name": "silu"}
     elif model_type == "deepseek_v3":
         config.first_k_dense_replace = 0
+    elif model_type == "deepseek_v32":
+        config.mlp_layer_types = ["sparse"] * config.num_hidden_layers
     elif model_type == "ernie4_5_vl_moe":
         config.text_config.moe_intermediate_size = [32, 32]
         config.text_config.rope_parameters = {
@@ -339,6 +341,19 @@ META_MODEL_CASES = [
         "config_module": "transformers.models.deepseek_v3.configuration_deepseek_v3",
         "config_class": "DeepseekV3Config",
         "target_class_paths": ("transformers.models.deepseek_v3.modeling_deepseek_v3.DeepseekV3NaiveMoe",),
+        "validator": "experts",
+        "min_targets": 2,
+    },
+    {
+        "model_type": "deepseek_v32",
+        "mode": "convert",
+        "model_module": "transformers.models.deepseek_v32.modeling_deepseek_v32",
+        "model_class": "DeepseekV32ForCausalLM",
+        "config_module": "transformers.models.deepseek_v32.configuration_deepseek_v32",
+        "config_class": "DeepseekV32Config",
+        "target_class_paths": (
+            "transformers.models.deepseek_v32.modeling_deepseek_v32.DeepseekV32Experts",
+        ),
         "validator": "experts",
         "min_targets": 2,
     },
