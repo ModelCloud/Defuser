@@ -146,6 +146,12 @@ MODEL_CONFIG = {
             ),
         ],
     },
+    "qwen4_exp": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "qwen4_exp_text": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
     "glm4_moe": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
         PATCH.REPLACE_MODULE: [

@@ -38,6 +38,8 @@ from transformers.models.qwen3_next.modeling_qwen3_next import (
     Qwen3NextSparseMoeBlock,
 )
 from transformers.models.qwen3_omni_moe.configuration_qwen3_omni_moe import Qwen3OmniMoeConfig
+from transformers.models.qwen4_exp.configuration_qwen4_exp import Qwen4ExpTextConfig
+from transformers.models.qwen4_exp.modeling_qwen4_exp import Qwen4ExpForCausalLM
 from transformers.models.gpt_oss.modeling_gpt_oss import GptOssConfig, GptOssForCausalLM
 from transformers.models.phimoe.modeling_phimoe import PhimoeConfig, PhimoeForCausalLM
 from transformers.models.llama4.modeling_llama4 import Llama4Config, Llama4ForConditionalGeneration
@@ -173,6 +175,39 @@ def _tiny_qwen3_5_moe_config():
             "out_hidden_size": 64,
             "num_position_embeddings": 64,
         },
+    )
+
+
+def _tiny_qwen4_exp_text_config():
+    return Qwen4ExpTextConfig(
+        vocab_size=64,
+        hidden_size=16,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=4,
+        moe_intermediate_size=8,
+        shared_expert_intermediate_size=8,
+        num_experts=3,
+        num_experts_per_tok=2,
+        max_position_embeddings=32,
+        layer_types=["linear_attention", "qwen_sparse_attention"],
+        linear_num_key_heads=2,
+        linear_num_value_heads=4,
+        linear_key_head_dim=4,
+        linear_value_head_dim=4,
+        linear_conv_kernel_dim=2,
+        hc_count=2,
+        hc_lowrank=4,
+        ple_layer_ids=[],
+        bos_token_id=1,
+        eos_token_id=2,
+        pad_token_id=0,
+        indexer_n_heads=2,
+        indexer_kv_heads=1,
+        indexer_head_dim=4,
+        indexer_budget=8,
+        indexer_compress_ratio=2,
     )
 
 
@@ -737,6 +772,24 @@ def test_qwen3_5_moe():
     torch.testing.assert_close(expert0.gate_proj.weight, expected_gate)
     torch.testing.assert_close(expert0.up_proj.weight, expected_up)
     torch.testing.assert_close(expert0.down_proj.weight, expected_down)
+
+
+def test_qwen4_exp_text_preserves_forward():
+    model = Qwen4ExpForCausalLM(_tiny_qwen4_exp_text_config()).eval()
+    input_ids = torch.tensor([[1, 7, 8, 2]])
+
+    with torch.inference_mode():
+        expected = model(input_ids=input_ids, use_cache=False).logits
+
+    assert convert_model(model, cleanup_original=False)
+    assert model.config.model_type == "qwen4_exp_text"
+    experts = model.model.layers[0].mlp.experts
+    assert hasattr(experts, "0")
+    assert not hasattr(experts, "gate_up_proj")
+
+    with torch.inference_mode():
+        actual = model(input_ids=input_ids, use_cache=False).logits
+    torch.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-7)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")

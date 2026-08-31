@@ -603,6 +603,8 @@ ALL_CANDIDATE_MODEL_TYPES = {
     "qwen3_next",
     "qwen3_omni_moe",
     "qwen3_vl_moe",
+    "qwen4_exp",
+    "qwen4_exp_text",
     "solar_open",
     "solar_open2",
     "zamba2",
