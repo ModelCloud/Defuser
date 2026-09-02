@@ -199,6 +199,15 @@ MODEL_CONFIG = {
     "glm_image": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
+    "glm5_next": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+        PATCH.EXPERTS_DEFUSE: [
+            {
+                "module_class": "transformers.models.glm5_next.modeling_glm5_next.Glm5NextTextExperts",
+                "forward_impl": "linear_loop",
+            }
+        ],
+    },
     "glm_moe_dsa": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },

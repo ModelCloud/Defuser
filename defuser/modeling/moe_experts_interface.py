@@ -282,6 +282,10 @@ def _matching_experts_defuse_spec(module: nn.Module, specs: list[dict]) -> dict 
 
 def _install_instance_forward(module: nn.Module, implementation: str) -> None:
     """Attach a generic forward implementation directly to one experts module."""
+    if implementation == LINEAR_LOOP_IMPL:
+        module.forward = MethodType(linear_loop_experts_forward, module)
+        return
+
     if implementation == BATCHED_INPUT_IMPL:
         module.forward = MethodType(batched_input_experts_forward, module)
         return

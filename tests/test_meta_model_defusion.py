@@ -166,6 +166,8 @@ def _build_model_config(case: dict):
         }
     elif model_type == "glm4_moe":
         config.first_k_dense_replace = -1
+    elif model_type == "glm5_next":
+        config.text_config.mlp_layer_types = ["sparse"] * config.text_config.num_hidden_layers
     elif model_type == "glm_moe_dsa":
         config.mlp_layer_types = ["sparse"] * config.num_hidden_layers
     elif model_type == "granitemoehybrid":
@@ -499,6 +501,19 @@ META_MODEL_CASES = [
         "config_class": "GlmImageConfig",
         "target_class_paths": ("transformers.models.glm_image.modeling_glm_image.GlmImageTextMLP",),
         "validator": "dense_split",
+    },
+    {
+        "model_type": "glm5_next",
+        "mode": "convert",
+        "model_module": "transformers.models.glm5_next.modeling_glm5_next",
+        "model_class": "Glm5NextForConditionalGeneration",
+        "config_module": "transformers.models.glm5_next.configuration_glm5_next",
+        "config_class": "Glm5NextConfig",
+        "target_class_paths": (
+            "transformers.models.glm5_next.modeling_glm5_next.Glm5NextTextExperts",
+        ),
+        "validator": "experts",
+        "min_targets": 2,
     },
     {
         "model_type": "glm_moe_dsa",
