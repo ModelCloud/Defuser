@@ -46,6 +46,21 @@ MODEL_CONFIG = {
     "dia": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
+    "diffusion_gemma": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+        PATCH.EXPERTS_DEFUSE: [
+            {
+                # DiffusionGemma's fused experts need an instance-level
+                # implementation after defusion so their per-expert Linear
+                # leaves remain compatible with the upstream routing call.
+                "module_class": (
+                    "transformers.models.diffusion_gemma.modeling_diffusion_gemma."
+                    "DiffusionGemmaTextExperts"
+                ),
+                "forward_impl": "linear_loop",
+            }
+        ],
+    },
     "dots1": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
