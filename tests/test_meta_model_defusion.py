@@ -138,7 +138,49 @@ def _mutate_common_config_tree(config, visited: set[int] | None = None) -> None:
 
 def _build_model_config(case: dict):
     """Construct a small config tree for one registered public model type."""
-    config = _load(case["config_module"], case["config_class"])()
+    config_cls = _load(case["config_module"], case["config_class"])
+    if case["model_type"] == "diffusion_gemma":
+        # Unlike the generic cases, DiffusionGemma validates its nested text /
+        # vision configs during construction; provide a minimal valid pair so
+        # this registry test remains a meta-only structural check.
+        return config_cls(
+            text_config={
+                "vocab_size": 128,
+                "hidden_size": 64,
+                "intermediate_size": 128,
+                "moe_intermediate_size": 32,
+                "num_hidden_layers": 2,
+                "num_attention_heads": 4,
+                "num_key_value_heads": 1,
+                "num_global_key_value_heads": 1,
+                "head_dim": 16,
+                "global_head_dim": 16,
+                "num_experts": 4,
+                "top_k_experts": 1,
+                "max_position_embeddings": 64,
+                "sliding_window": 8,
+                "layer_types": ["sliding_attention", "full_attention"],
+                "use_bidirectional_attention": "vision",
+            },
+            vision_config={
+                "hidden_size": 64,
+                "intermediate_size": 128,
+                "num_hidden_layers": 1,
+                "num_attention_heads": 4,
+                "num_key_value_heads": 4,
+                "head_dim": 16,
+                "max_position_embeddings": 64,
+                "patch_size": 4,
+                "pooling_kernel_size": 1,
+                "position_embedding_size": 16,
+            },
+            canvas_length=4,
+            image_token_id=124,
+            boi_token_id=125,
+            eoi_token_id=126,
+        )
+
+    config = config_cls()
     _mutate_common_config_tree(config)
 
     model_type = case["model_type"]
@@ -389,6 +431,21 @@ META_MODEL_CASES = [
         "config_class": "Dots1Config",
         "target_class_paths": ("transformers.models.dots1.modeling_dots1.Dots1NaiveMoe",),
         "validator": "experts",
+    },
+    {
+        "model_type": "diffusion_gemma",
+        "mode": "convert",
+        "model_module": "transformers.models.diffusion_gemma.modeling_diffusion_gemma",
+        "model_class": "DiffusionGemmaForBlockDiffusion",
+        "config_module": "transformers.models.diffusion_gemma.configuration_diffusion_gemma",
+        "config_class": "DiffusionGemmaConfig",
+        "target_class_paths": (
+            "transformers.models.diffusion_gemma.modeling_diffusion_gemma.DiffusionGemmaTextExperts",
+        ),
+        "validator": "experts",
+        # There are separate experts blocks in the encoder and decoder; seeing
+        # both ensures the declarative class-path patch is applied everywhere.
+        "min_targets": 2,
     },
     {
         "model_type": "ernie4_5_moe",
