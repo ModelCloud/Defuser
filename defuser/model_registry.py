@@ -76,6 +76,18 @@ MODEL_CONFIG = {
     "flex_olmo": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
+    "flint": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+        PATCH.EXPERTS_DEFUSE: [
+            {
+                # Flint keeps gate/up and down projections as 3-D expert
+                # parameters. Expand them into per-expert Linear modules so
+                # GPTQModel can discover and quantize every routed expert.
+                "module_class": "transformers.models.flint.modeling_flint.FlintExperts",
+                "forward_impl": "linear_loop",
+            }
+        ],
+    },
     "glm": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
