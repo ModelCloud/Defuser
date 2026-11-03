@@ -9,6 +9,13 @@ import torch
 from safetensors.torch import save_file
 from torch import nn
 from transformers.core_model_loading import WeightConverter
+from transformers.models.afmoe.configuration_afmoe import AfmoeConfig
+from transformers.models.afmoe.modeling_afmoe import AfmoeExperts, AfmoeForCausalLM
+from transformers.models.bailing_hybrid.configuration_bailing_hybrid import BailingHybridConfig
+from transformers.models.bailing_hybrid.modeling_bailing_hybrid import (
+    BailingHybridExperts,
+    BailingHybridForCausalLM,
+)
 from transformers.models.glm4_moe.modeling_glm4_moe import Glm4MoeConfig, Glm4MoeForCausalLM, Glm4MoeMoE
 from transformers.models.glm4_moe_lite.configuration_glm4_moe_lite import Glm4MoeLiteConfig
 from transformers.models.glm4_moe_lite.modeling_glm4_moe_lite import (
@@ -82,6 +89,53 @@ def _tiny_moe_config(config_cls, num_hidden_layers: int=1):
         num_experts=4,
         num_experts_per_tok=2,
         vocab_size=128,
+    )
+
+
+def _tiny_afmoe_config(num_hidden_layers: int = 1):
+    return AfmoeConfig(
+        num_hidden_layers=num_hidden_layers,
+        # Keep every layer on the MoE path so the routed experts are present.
+        num_dense_layers=0,
+        hidden_size=64,
+        intermediate_size=128,
+        moe_intermediate_size=32,
+        num_attention_heads=4,
+        num_key_value_heads=4,
+        head_dim=16,
+        num_experts=4,
+        num_experts_per_tok=2,
+        num_shared_experts=2,
+        vocab_size=128,
+        max_position_embeddings=64,
+        pad_token_id=0,
+        bos_token_id=1,
+        eos_token_id=2,
+    )
+
+
+def _tiny_bailing_hybrid_config(num_hidden_layers: int = 2):
+    return BailingHybridConfig(
+        num_hidden_layers=num_hidden_layers,
+        # Keep every layer on the MoE path so the routed experts are present.
+        first_k_dense_replace=0,
+        layer_types=(
+            ["linear_attention", "full_attention"] * ((num_hidden_layers + 1) // 2)
+        )[:num_hidden_layers],
+        hidden_size=64,
+        intermediate_size=128,
+        moe_intermediate_size=32,
+        num_attention_heads=4,
+        num_key_value_heads=4,
+        head_dim=16,
+        num_local_experts=4,
+        num_experts_per_tok=2,
+        n_shared_experts=2,
+        vocab_size=128,
+        max_position_embeddings=64,
+        pad_token_id=0,
+        bos_token_id=1,
+        eos_token_id=2,
     )
 
 
@@ -1249,6 +1303,160 @@ def test_gpt_oss_split_forward_matches_fused_math():
 
     # The split experts path should exactly reproduce the original fused experts math.
     torch.testing.assert_close(actual, expected)
+
+
+def test_afmoe_registry_and_defusion():
+    from defuser.modeling.moe_experts_interface import linear_loop_experts_forward
+
+    assert MODEL_CONFIG["afmoe"][PATCH.EXPERTS_DEFUSE] == [
+        {
+            "module_class": "transformers.models.afmoe.modeling_afmoe.AfmoeExperts",
+            "forward_impl": "linear_loop",
+        }
+    ]
+
+    model = AfmoeForCausalLM(_tiny_afmoe_config())
+    assert model.config.model_type == "afmoe"
+
+    experts = model.model.layers[0].mlp.experts
+    assert isinstance(experts, AfmoeExperts)
+    num_experts = model.config.num_experts
+    hidden_dim = model.config.hidden_size
+    intermediate_dim = model.config.moe_intermediate_size
+    assert tuple(experts.gate_up_proj.shape) == (num_experts, 2 * intermediate_dim, hidden_dim)
+    assert tuple(experts.down_proj.shape) == (num_experts, hidden_dim, intermediate_dim)
+
+    expected_gate = experts.gate_up_proj[0, :intermediate_dim, :].clone()
+    expected_up = experts.gate_up_proj[0, intermediate_dim:, :].clone()
+    expected_down = experts.down_proj[0, :, :].clone()
+
+    converted = convert_model(model, cleanup_original=False, max_layers=1)
+    assert converted
+
+    experts = model.model.layers[0].mlp.experts
+    assert isinstance(experts, AfmoeExperts)
+    assert not hasattr(experts, "gate_up_proj")
+    assert not hasattr(experts, "down_proj")
+    assert experts.forward.__func__ is linear_loop_experts_forward
+
+    containers = [name for name, _ in experts.named_children() if name.isdigit()]
+    assert sorted(containers, key=int) == [str(idx) for idx in range(num_experts)]
+
+    expert0 = getattr(experts, "0")
+    assert isinstance(expert0.gate_proj, nn.Linear)
+    assert isinstance(expert0.up_proj, nn.Linear)
+    assert isinstance(expert0.down_proj, nn.Linear)
+
+    torch.testing.assert_close(expert0.gate_proj.weight, expected_gate)
+    torch.testing.assert_close(expert0.up_proj.weight, expected_up)
+    torch.testing.assert_close(expert0.down_proj.weight, expected_down)
+
+
+def test_afmoe_split_forward_matches_fused_math():
+    model = AfmoeForCausalLM(_tiny_afmoe_config())
+    fused_experts = model.model.layers[0].mlp.experts
+    assert isinstance(fused_experts, AfmoeExperts)
+
+    input_ids = torch.randint(0, model.config.vocab_size, (2, 7))
+    hidden_states = torch.randn(5, model.config.hidden_size, dtype=torch.float32)
+    top_k_index = torch.randint(0, model.config.num_experts, (hidden_states.size(0), 2))
+    top_k_weights = torch.rand((hidden_states.size(0), 2), dtype=hidden_states.dtype)
+
+    with torch.no_grad():
+        expected_experts = fused_experts(hidden_states, top_k_index, top_k_weights)
+        expected_logits = model(input_ids).logits
+
+    converted = convert_model(model, cleanup_original=False, max_layers=1)
+    assert converted
+
+    split_experts = model.model.layers[0].mlp.experts
+    _assert_unfused_expert_module(split_experts)
+    with torch.no_grad():
+        actual_experts = split_experts(hidden_states, top_k_index, top_k_weights)
+        actual_logits = model(input_ids).logits
+
+    # The defused linear_loop path should reproduce the original fused experts math.
+    torch.testing.assert_close(actual_experts, expected_experts, atol=1e-5, rtol=1e-5)
+    torch.testing.assert_close(actual_logits, expected_logits, atol=1e-5, rtol=1e-5)
+
+
+def test_bailing_hybrid_registry_and_defusion():
+    from defuser.modeling.moe_experts_interface import linear_loop_experts_forward
+
+    assert MODEL_CONFIG["bailing_hybrid"][PATCH.EXPERTS_DEFUSE] == [
+        {
+            "module_class": (
+                "transformers.models.bailing_hybrid.modeling_bailing_hybrid."
+                "BailingHybridExperts"
+            ),
+            "forward_impl": "linear_loop",
+        }
+    ]
+
+    model = BailingHybridForCausalLM(_tiny_bailing_hybrid_config())
+    assert model.config.model_type == "bailing_hybrid"
+
+    experts = model.model.layers[0].mlp.experts
+    assert isinstance(experts, BailingHybridExperts)
+    num_experts = model.config.num_local_experts
+    hidden_dim = model.config.hidden_size
+    intermediate_dim = model.config.moe_intermediate_size
+    assert tuple(experts.gate_up_proj.shape) == (num_experts, 2 * intermediate_dim, hidden_dim)
+    assert tuple(experts.down_proj.shape) == (num_experts, hidden_dim, intermediate_dim)
+
+    expected_gate = experts.gate_up_proj[0, :intermediate_dim, :].clone()
+    expected_up = experts.gate_up_proj[0, intermediate_dim:, :].clone()
+    expected_down = experts.down_proj[0, :, :].clone()
+
+    converted = convert_model(model, cleanup_original=False, max_layers=1)
+    assert converted
+
+    experts = model.model.layers[0].mlp.experts
+    assert isinstance(experts, BailingHybridExperts)
+    assert not hasattr(experts, "gate_up_proj")
+    assert not hasattr(experts, "down_proj")
+    assert experts.forward.__func__ is linear_loop_experts_forward
+
+    containers = [name for name, _ in experts.named_children() if name.isdigit()]
+    assert sorted(containers, key=int) == [str(idx) for idx in range(num_experts)]
+
+    expert0 = getattr(experts, "0")
+    assert isinstance(expert0.gate_proj, nn.Linear)
+    assert isinstance(expert0.up_proj, nn.Linear)
+    assert isinstance(expert0.down_proj, nn.Linear)
+
+    torch.testing.assert_close(expert0.gate_proj.weight, expected_gate)
+    torch.testing.assert_close(expert0.up_proj.weight, expected_up)
+    torch.testing.assert_close(expert0.down_proj.weight, expected_down)
+
+
+def test_bailing_hybrid_split_forward_matches_fused_math():
+    model = BailingHybridForCausalLM(_tiny_bailing_hybrid_config())
+    fused_experts = model.model.layers[0].mlp.experts
+    assert isinstance(fused_experts, BailingHybridExperts)
+
+    hidden_states = torch.randn(5, model.config.hidden_size, dtype=torch.float32)
+    top_k_index = torch.randint(
+        0, model.config.num_local_experts, (hidden_states.size(0), 2)
+    )
+    top_k_weights = torch.rand((hidden_states.size(0), 2), dtype=hidden_states.dtype)
+
+    with torch.no_grad():
+        expected_experts = fused_experts(hidden_states, top_k_index, top_k_weights)
+
+    converted = convert_model(model, cleanup_original=False, max_layers=1)
+    assert converted
+
+    split_experts = model.model.layers[0].mlp.experts
+    _assert_unfused_expert_module(split_experts)
+    with torch.no_grad():
+        actual_experts = split_experts(hidden_states, top_k_index, top_k_weights)
+
+    # The defused linear_loop path should reproduce the original fused experts
+    # math. The full decoder forward is not exercised here because
+    # ``bailing_hybrid``'s delta-attention path calls ``causal_conv1d``, which
+    # requires a CUDA device.
+    torch.testing.assert_close(actual_experts, expected_experts, atol=1e-5, rtol=1e-5)
 
 
 def test_laguna():

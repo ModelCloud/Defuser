@@ -197,6 +197,11 @@ def _build_model_config(case: dict):
         config.ffn_config.ffn_act_fn = {"name": "silu"}
     elif model_type == "deepseek_v3":
         config.first_k_dense_replace = 0
+    elif model_type == "bailing_hybrid":
+        # The default config keeps the first layers dense, so the routed
+        # experts would not be constructed. Force every tiny layer onto MoE.
+        config.first_k_dense_replace = 0
+        config.mlp_layer_types = ["sparse"] * config.num_hidden_layers
     elif model_type == "deepseek_v32":
         config.mlp_layer_types = ["sparse"] * config.num_hidden_layers
     elif model_type == "ernie4_5_vl_moe":
@@ -346,6 +351,28 @@ def _validate_defused_module(case: dict, module) -> None:
 
 
 META_MODEL_CASES = [
+    {
+        "model_type": "afmoe",
+        "mode": "convert",
+        "model_module": "transformers.models.afmoe.modeling_afmoe",
+        "model_class": "AfmoeForCausalLM",
+        "config_module": "transformers.models.afmoe.configuration_afmoe",
+        "config_class": "AfmoeConfig",
+        "target_class_paths": ("transformers.models.afmoe.modeling_afmoe.AfmoeExperts",),
+        "validator": "experts",
+    },
+    {
+        "model_type": "bailing_hybrid",
+        "mode": "convert",
+        "model_module": "transformers.models.bailing_hybrid.modeling_bailing_hybrid",
+        "model_class": "BailingHybridForCausalLM",
+        "config_module": "transformers.models.bailing_hybrid.configuration_bailing_hybrid",
+        "config_class": "BailingHybridConfig",
+        "target_class_paths": (
+            "transformers.models.bailing_hybrid.modeling_bailing_hybrid.BailingHybridExperts",
+        ),
+        "validator": "experts",
+    },
     {
         "model_type": "axk2",
         "mode": "convert",

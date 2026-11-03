@@ -16,8 +16,26 @@ class PATCH(str, Enum):
 
 
 MODEL_CONFIG = {
+    "afmoe": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+        PATCH.EXPERTS_DEFUSE: [
+            {
+                "module_class": "transformers.models.afmoe.modeling_afmoe.AfmoeExperts",
+                "forward_impl": "linear_loop",
+            }
+        ],
+    },
     "axk2": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "bailing_hybrid": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+        PATCH.EXPERTS_DEFUSE: [
+            {
+                "module_class": "transformers.models.bailing_hybrid.modeling_bailing_hybrid.BailingHybridExperts",
+                "forward_impl": "linear_loop",
+            }
+        ],
     },
     "cohere2_moe": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
