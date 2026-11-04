@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 
 from defuser.modeling.moe_experts_interface import _detect_expert_projections, _unfuse_experts_weights_inplace
+from defuser.model_registry import MODEL_CONFIG, PATCH
 
 
 class _UnknownExpertsWithLossProperty(nn.Module):
@@ -60,3 +61,14 @@ def test_unfuse_experts_supports_registered_buffers() -> None:
     torch.testing.assert_close(expert0.gate_proj.weight, expected_gate_proj)
     torch.testing.assert_close(expert0.up_proj.weight, expected_up_proj)
     torch.testing.assert_close(expert0.down_proj.weight, expected_down_proj)
+
+
+def test_flint_registry_defuses_stacked_expert_weights() -> None:
+    specs = MODEL_CONFIG["flint"][PATCH.EXPERTS_DEFUSE]
+
+    assert specs == [
+        {
+            "module_class": "transformers.models.flint.modeling_flint.FlintExperts",
+            "forward_impl": "linear_loop",
+        }
+    ]
