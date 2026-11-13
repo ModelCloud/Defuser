@@ -268,6 +268,9 @@ MODEL_CONFIG = {
     "granitemoehybrid": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
+    "granitemoe_swa": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
     "granitemoeshared": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
