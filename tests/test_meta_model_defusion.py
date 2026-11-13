@@ -224,6 +224,9 @@ def _build_model_config(case: dict):
         config.layer_types = ["attention", "attention"]
         config.shared_intermediate_size = 64
         config.mamba_n_heads = 8
+    elif model_type == "granitemoe_swa":
+        config.layer_types = ["full_attention", "sliding_attention"]
+        config.shared_intermediate_size = 32
     elif model_type == "jamba":
         # Keep this meta-structure test on the attention path. The mamba path
         # lazy-loads optional hub kernels during construction, which is outside
@@ -654,6 +657,17 @@ META_MODEL_CASES = [
         ),
         "validator": "parallel",
         "min_targets": 4,
+    },
+    {
+        "model_type": "granitemoe_swa",
+        "mode": "convert",
+        "model_module": "transformers.models.granitemoe_swa.modeling_granitemoe_swa",
+        "model_class": "GraniteMoeSWAForCausalLM",
+        "config_module": "transformers.models.granitemoe_swa.configuration_granitemoe_swa",
+        "config_class": "GraniteMoeSWAConfig",
+        "target_class_paths": ("transformers.models.granitemoe_swa.modeling_granitemoe_swa.GraniteMoeSWAExperts",),
+        "validator": "experts",
+        "min_targets": 2,
     },
     {
         "model_type": "granitemoeshared",
