@@ -17,6 +17,10 @@ from transformers.models.bailing_hybrid.modeling_bailing_hybrid import (
     BailingHybridForCausalLM,
 )
 from transformers.models.glm4_moe.modeling_glm4_moe import Glm4MoeConfig, Glm4MoeForCausalLM, Glm4MoeMoE
+from transformers.models.kimi_linear.configuration_kimi_linear import KimiLinearConfig
+from transformers.models.kimi_linear.modeling_kimi_linear import KimiLinearForCausalLM
+from transformers.models.mimo_v2_flash.configuration_mimo_v2_flash import MiMoV2FlashConfig
+from transformers.models.mimo_v2_flash.modeling_mimo_v2_flash import MiMoV2FlashForCausalLM
 from transformers.models.glm4_moe_lite.configuration_glm4_moe_lite import Glm4MoeLiteConfig
 from transformers.models.glm4_moe_lite.modeling_glm4_moe_lite import (
     Glm4MoeLiteForCausalLM,
@@ -298,6 +302,49 @@ def _tiny_glm4_moe_config():
         eos_token_id=2,
         head_dim=16,
         first_k_dense_replace=-1,  # Ensure that the first layer is Glm4MoeMoE.
+    )
+
+
+def _tiny_kimi_linear_config():
+    return KimiLinearConfig(
+        vocab_size=64,
+        hidden_size=32,
+        intermediate_size=48,
+        moe_intermediate_size=16,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=8,
+        num_experts=4,
+        num_experts_per_tok=2,
+        linear_num_key_heads=2,
+        linear_num_value_heads=4,
+        linear_key_head_dim=8,
+        linear_value_head_dim=8,
+        linear_conv_kernel_dim=4,
+        pad_token_id=0,
+        bos_token_id=1,
+        eos_token_id=2,
+    )
+
+
+def _tiny_mimo_v2_flash_config():
+    return MiMoV2FlashConfig(
+        vocab_size=64,
+        hidden_size=32,
+        intermediate_size=48,
+        moe_intermediate_size=16,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=8,
+        n_routed_experts=4,
+        num_experts_per_tok=2,
+        layer_types=["full_attention", "sliding_attention"],
+        mlp_layer_types=["dense", "sparse"],
+        pad_token_id=0,
+        bos_token_id=1,
+        eos_token_id=2,
     )
 
 
@@ -1243,6 +1290,49 @@ def test_defused_glm4_model_forward_accepts_router_tuple(model_type, config_fact
 
     assert logits.shape == (1, 4, model.config.vocab_size)
     assert torch.isfinite(logits).all()
+
+
+@pytest.mark.parametrize("model_type", ["kimi_k25", "kimi_linear", "mimo_v2_flash", "unlimited_ocr"])
+def test_native_moe_model_types_are_registered(model_type):
+    """Native Transformers MoE backbones must not fall through the registry.
+
+    Without a registry entry ``convert_model()`` returns False and the routed
+    experts stay fused as 3-D parameters, so downstream quantizers silently
+    leave them in the source dtype.
+    """
+
+    assert model_type in MODEL_CONFIG
+    assert MODEL_CONFIG[model_type]["min_transformers_version"] == MIN_SUPPORTED_TRANSFORMERS_VERSION
+
+
+@pytest.mark.parametrize(
+    ("model_type", "config_factory", "model_cls"),
+    [
+        ("kimi_linear", _tiny_kimi_linear_config, KimiLinearForCausalLM),
+        ("mimo_v2_flash", _tiny_mimo_v2_flash_config, MiMoV2FlashForCausalLM),
+    ],
+)
+def test_native_moe_defusion_preserves_forward(model_type, config_factory, model_cls):
+    """Registering a native MoE type must defuse it without changing the output."""
+
+    model = model_cls(config_factory()).eval()
+    input_ids = torch.tensor([[1, 2, 3, 4]])
+
+    with torch.no_grad():
+        expected = model(input_ids=input_ids, use_cache=False).logits
+
+    assert convert_model(model, cleanup_original=False) is True
+
+    experts = [module for name, module in model.named_modules() if name.endswith(".mlp.experts")]
+    assert experts, f"{model_type}: no routed-expert containers found"
+    assert hasattr(experts[0], "0")
+    assert hasattr(experts[0].get_submodule("0"), "gate_proj")
+    assert not hasattr(experts[0], "gate_up_proj")
+
+    with torch.no_grad():
+        actual = model(input_ids=input_ids, use_cache=False).logits
+
+    torch.testing.assert_close(actual, expected, atol=1e-6, rtol=0)
 
 
 def test_glm4v_checkpoint_mapping_splits_gate_up_proj():

@@ -238,6 +238,16 @@ def _build_model_config(case: dict):
     elif model_type == "lfm2_moe":
         config.layer_types = ["full_attention", "short_conv"]
         config.num_dense_layers = 0
+    elif model_type == "kimi_k25":
+        # The DeepSeek-V3 text backbone starts with dense layers; force every
+        # tiny layer onto the routed-expert path.
+        config.text_config.first_k_dense_replace = 0
+    elif model_type == "kimi_linear":
+        config.mlp_layer_types = ["sparse"] * config.num_hidden_layers
+    elif model_type == "mimo_v2_flash":
+        config.mlp_layer_types = ["dense", "sparse"]
+    elif model_type == "unlimited_ocr":
+        config.text_config.mlp_layer_types = ["sparse"] * config.text_config.num_hidden_layers
     elif model_type == "laguna":
         config.layer_types = ["full_attention"] * config.num_hidden_layers
         config.mlp_layer_types = ["dense"] + ["sparse"] * (config.num_hidden_layers - 1)
@@ -714,6 +724,27 @@ META_MODEL_CASES = [
         "min_targets": 4,
     },
     {
+        "model_type": "kimi_k25",
+        "mode": "convert",
+        "model_module": "transformers.models.kimi_k25.modeling_kimi_k25",
+        "model_class": "Kimi_K25ForConditionalGeneration",
+        "config_module": "transformers.models.kimi_k25.configuration_kimi_k25",
+        "config_class": "Kimi_K25Config",
+        "target_class_paths": ("transformers.models.deepseek_v3.modeling_deepseek_v3.DeepseekV3Experts",),
+        "validator": "experts",
+        "min_targets": 2,
+    },
+    {
+        "model_type": "kimi_linear",
+        "mode": "convert",
+        "model_module": "transformers.models.kimi_linear.modeling_kimi_linear",
+        "model_class": "KimiLinearForCausalLM",
+        "config_module": "transformers.models.kimi_linear.configuration_kimi_linear",
+        "config_class": "KimiLinearConfig",
+        "target_class_paths": ("transformers.models.kimi_linear.modeling_kimi_linear.KimiLinearExperts",),
+        "validator": "experts",
+    },
+    {
         "model_type": "laguna",
         "mode": "convert",
         "model_module": "transformers.models.laguna.modeling_laguna",
@@ -755,6 +786,16 @@ META_MODEL_CASES = [
         "target_class_paths": ("transformers.models.longcat_flash.modeling_longcat_flash.LongcatFlashExperts",),
         "validator": "longcat",
         "min_targets": 2,
+    },
+    {
+        "model_type": "mimo_v2_flash",
+        "mode": "convert",
+        "model_module": "transformers.models.mimo_v2_flash.modeling_mimo_v2_flash",
+        "model_class": "MiMoV2FlashForCausalLM",
+        "config_module": "transformers.models.mimo_v2_flash.configuration_mimo_v2_flash",
+        "config_class": "MiMoV2FlashConfig",
+        "target_class_paths": ("transformers.models.mimo_v2_flash.modeling_mimo_v2_flash.MiMoV2FlashExperts",),
+        "validator": "experts",
     },
     {
         "model_type": "minimax",
@@ -950,6 +991,16 @@ META_MODEL_CASES = [
         "target_class_paths": ("transformers.models.solar_open2.modeling_solar_open2.SolarOpen2Experts",),
         "validator": "experts",
         "min_targets": 2,
+    },
+    {
+        "model_type": "unlimited_ocr",
+        "mode": "convert",
+        "model_module": "transformers.models.unlimited_ocr.modeling_unlimited_ocr",
+        "model_class": "UnlimitedOcrForConditionalGeneration",
+        "config_module": "transformers.models.unlimited_ocr.configuration_unlimited_ocr",
+        "config_class": "UnlimitedOcrConfig",
+        "target_class_paths": ("transformers.models.unlimited_ocr.modeling_unlimited_ocr.UnlimitedOcrTextExperts",),
+        "validator": "experts",
     },
     {
         "model_type": "zamba2",
