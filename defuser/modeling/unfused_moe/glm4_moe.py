@@ -6,6 +6,8 @@
 import torch
 import torch.nn as nn
 
+from .common import router_logits_from_output
+
 class LinearGlm4MoeMoE(nn.Module):
     """
     A mixed expert module containing shared experts.
@@ -34,9 +36,16 @@ class LinearGlm4MoeMoE(nn.Module):
         self.routed_scaling_factor = config.routed_scaling_factor
         self.top_k = config.num_experts_per_tok
 
-    def route_tokens_to_experts(self, router_logits: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """Replicate GLM4's grouped expert selection and top-k weight normalization."""
+    def route_tokens_to_experts(self, router_logits) -> tuple[torch.Tensor, torch.Tensor]:
+        """Replicate GLM4's grouped expert selection and top-k weight normalization.
+
+        Accepts either the raw logits tensor or the Transformers 5.22 router
+        output ``(router_logits, topk_weights, topk_indices)``. Only the logits
+        are used: Defuser re-derives the top-k selection below, so the router's
+        precomputed weights and indices would change its routing math.
+        """
         # Keep the expert selection identical to the upstream GLM4 MoE router.
+        router_logits = router_logits_from_output(router_logits)
         router_logits = router_logits.sigmoid()
         router_logits_for_choice = router_logits + self.gate.e_score_correction_bias
         group_scores = (
@@ -87,8 +96,8 @@ class LinearGlm4MoeMoE(nn.Module):
         """Apply routed experts plus the shared expert branch, matching upstream GLM4 MoE."""
         residuals = hidden_states
         orig_shape = hidden_states.shape
-        router_logits = self.gate(hidden_states)
-        topk_indices, topk_weights = self.route_tokens_to_experts(router_logits)
+        router_output = self.gate(hidden_states)
+        topk_indices, topk_weights = self.route_tokens_to_experts(router_output)
         hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
         hidden_states = self.moe(hidden_states, topk_indices, topk_weights).view(*orig_shape)
         hidden_states = hidden_states + self.shared_experts(residuals)

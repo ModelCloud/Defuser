@@ -9,6 +9,8 @@
 import torch
 import torch.nn as nn
 
+from .common import router_logits_from_output
+
 class LinearGlm4MoeLiteMoE(nn.Module):
     """
     A mixed expert module containing shared experts.
@@ -65,6 +67,12 @@ class LinearGlm4MoeLiteMoE(nn.Module):
         return final_hidden_states
 
     def route_tokens_to_experts(self, router_logits):
+        """Accept raw logits or the Transformers 5.22 ``(logits, weights, indices)`` tuple.
+
+        Defuser re-derives the grouped top-k selection below, so only the logits
+        are used; the router's precomputed top-k would change the routing math.
+        """
+        router_logits = router_logits_from_output(router_logits)
         router_logits = router_logits.sigmoid()
         router_logits_for_choice = router_logits + self.gate.e_score_correction_bias
         group_scores = (
@@ -92,8 +100,8 @@ class LinearGlm4MoeLiteMoE(nn.Module):
     def forward(self, hidden_states):
         residuals = hidden_states
         orig_shape = hidden_states.shape
-        router_logits = self.gate(hidden_states)
-        topk_indices, topk_weights = self.route_tokens_to_experts(router_logits)
+        router_output = self.gate(hidden_states)
+        topk_indices, topk_weights = self.route_tokens_to_experts(router_output)
         hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
         hidden_states = self.experts_forward(hidden_states, topk_indices, topk_weights).view(*orig_shape)
         hidden_states = hidden_states + self.shared_experts(residuals)

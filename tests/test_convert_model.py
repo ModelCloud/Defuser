@@ -1190,6 +1190,61 @@ def test_glm4_moe_lite_defused_forward_matches_fused_math():
         hidden_states,
     )
 
+
+@pytest.mark.parametrize(
+    ("config_factory", "block_cls"),
+    [
+        (_tiny_glm4_moe_config, LinearGlm4MoeMoE),
+        (lambda: _tiny_moe_config(Glm4MoeLiteConfig), LinearGlm4MoeLiteMoE),
+    ],
+)
+def test_glm4_route_tokens_accepts_tuple_and_tensor_equivalently(config_factory, block_cls):
+    """Transformers 5.22 routers return ``(logits, weights, indices)``.
+
+    The replacement block must unwrap the tuple while keeping Defuser's grouped
+    top-k routing math identical to the plain-logits path.
+    """
+
+    config = config_factory()
+    block = block_cls(config).eval()
+    hidden_states = torch.randn(2, 3, config.hidden_size, dtype=torch.float32)
+    with torch.no_grad():
+        router_output = block.gate(hidden_states)
+    logits = router_output[0] if isinstance(router_output, tuple) else router_output
+
+    with torch.no_grad():
+        tuple_indices, tuple_weights = block.route_tokens_to_experts((logits, None, None))
+        tensor_indices, tensor_weights = block.route_tokens_to_experts(logits)
+
+    torch.testing.assert_close(tuple_indices, tensor_indices, rtol=0, atol=0)
+    torch.testing.assert_close(tuple_weights, tensor_weights, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize(
+    ("model_type", "config_factory", "model_cls"),
+    [
+        ("glm4_moe", _tiny_glm4_moe_config, Glm4MoeForCausalLM),
+        (
+            "glm4_moe_lite",
+            lambda: _tiny_moe_config(Glm4MoeLiteConfig, num_hidden_layers=2),
+            Glm4MoeLiteForCausalLM,
+        ),
+    ],
+)
+def test_defused_glm4_model_forward_accepts_router_tuple(model_type, config_factory, model_cls):
+    """The installed Transformers router return shape must not crash a defused model."""
+
+    replace_fused_blocks(model_type)
+    model = model_cls(config_factory()).eval()
+    input_ids = torch.tensor([[1, 2, 3, 4]])
+
+    with torch.no_grad():
+        logits = model(input_ids=input_ids).logits
+
+    assert logits.shape == (1, 4, model.config.vocab_size)
+    assert torch.isfinite(logits).all()
+
+
 def test_glm4v_checkpoint_mapping_splits_gate_up_proj():
     from defuser.defuser import get_checkpoint_conversion_mapping
 
