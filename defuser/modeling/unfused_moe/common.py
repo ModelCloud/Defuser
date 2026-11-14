@@ -7,6 +7,20 @@ import torch
 from torch import nn
 
 
+def router_logits_from_output(router_output):
+    """Return raw router logits from a router tensor or the Transformers 5.22 tuple.
+
+    Transformers 5.22 routers return ``(router_logits, topk_weights,
+    topk_indices)``. Defuser keeps its own grouped top-k selection, so it only
+    needs the raw logits; the router's precomputed top-k is intentionally
+    discarded so the routing math stays byte-identical across Transformers
+    versions.
+    """
+    if isinstance(router_output, tuple):
+        return router_output[0]
+    return router_output
+
+
 def run_routed_experts(
     experts: nn.ModuleList,
     hidden_states: torch.Tensor,
