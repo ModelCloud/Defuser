@@ -286,6 +286,16 @@ MODEL_CONFIG = {
     "jetmoe": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
+    # Native Transformers MoE backbones whose fused 3-D expert tensors the
+    # generic experts pass already splits. Registering them lets
+    # ``convert_model()`` report the conversion instead of returning False and
+    # leaving routed experts fused.
+    "kimi_k25": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "kimi_linear": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
     "laguna": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
@@ -311,6 +321,9 @@ MODEL_CONFIG = {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
     "longcat_flash": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "mimo_v2_flash": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
     "minimax": {
@@ -344,6 +357,9 @@ MODEL_CONFIG = {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
     "solar_open2": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+    },
+    "unlimited_ocr": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
     "zamba2": {
