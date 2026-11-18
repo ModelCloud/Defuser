@@ -33,7 +33,7 @@ from torch import nn
 
 from defuser.model_registry import MODEL_CONFIG, PATCH
 from defuser.utils.common import compile_module_name_filter, matches_module_name_filter
-from defuser.utils.device import clear_memory, to_meta
+from defuser.utils.device import clear_memory, model_accelerator_devices, to_meta
 
 from defuser import DEBUG_ON
 
@@ -787,7 +787,8 @@ def prepare_model_for_moe_quantization(
     # and should use full module replacement instead
     if unfused_modules:
         if DEBUG_ON: logger.info(f"[MoE Prep] Unfused {len(unfused_modules)} MOE experts modules")
-        clear_memory()
+        # Only flush devices this model occupies; a CPU/meta model touches no accelerator.
+        clear_memory(device_list=model_accelerator_devices(model))
 
         # Set config for linear_loop forward only when the upstream model uses
         # the decorator-based experts interface.
