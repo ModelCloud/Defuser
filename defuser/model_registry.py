@@ -52,6 +52,18 @@ MODEL_CONFIG = {
     "inkling_mm_model": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
+    "inkling2_loop": {
+        "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
+        PATCH.EXPERTS_DEFUSE: [
+            {
+                # Inkling 2 Mini keeps routed experts as 3-D gate_up_proj /
+                # down_proj parameters. Expand them into per-expert Linear
+                # modules so quantizers can discover and quantize each expert.
+                "module_class": "transformers.models.inkling2_loop.modeling_inkling2_loop.Inkling2LoopExperts",
+                "forward_impl": "linear_loop",
+            }
+        ],
+    },
     "deepseek_v3": {
         "min_transformers_version": MIN_SUPPORTED_TRANSFORMERS_VERSION,
     },
