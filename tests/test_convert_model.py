@@ -1292,7 +1292,9 @@ def test_defused_glm4_model_forward_accepts_router_tuple(model_type, config_fact
     assert torch.isfinite(logits).all()
 
 
-@pytest.mark.parametrize("model_type", ["kimi_k25", "kimi_linear", "mimo_v2_flash", "unlimited_ocr"])
+@pytest.mark.parametrize(
+    "model_type", ["kimi_k25", "kimi_linear", "mimo_v2_flash", "unlimited_ocr", "inkling2_loop"]
+)
 def test_native_moe_model_types_are_registered(model_type):
     """Native Transformers MoE backbones must not fall through the registry.
 
@@ -1328,6 +1330,80 @@ def test_native_moe_defusion_preserves_forward(model_type, config_factory, model
     assert hasattr(experts[0], "0")
     assert hasattr(experts[0].get_submodule("0"), "gate_proj")
     assert not hasattr(experts[0], "gate_up_proj")
+
+    with torch.no_grad():
+        actual = model(input_ids=input_ids, use_cache=False).logits
+
+    torch.testing.assert_close(actual, expected, atol=1e-6, rtol=0)
+
+
+def test_inkling2_loop_experts_defuse_preserves_forward():
+    """Inkling 2 Mini routed experts are 3-D parameters that must be expanded.
+
+    The implementation only exists on the open huggingface/transformers#51050
+    branch, so this test skips with a precise reason on a released Transformers
+    that has no ``inkling2_loop`` module.
+    """
+
+    modeling = pytest.importorskip(
+        "transformers.models.inkling2_loop.modeling_inkling2_loop",
+        reason="Inkling2Loop only exists on the open huggingface/transformers#51050 branch.",
+    )
+    configuration = pytest.importorskip(
+        "transformers.models.inkling2_loop.configuration_inkling2_loop",
+        reason="Inkling2Loop only exists on the open huggingface/transformers#51050 branch.",
+    )
+
+    torch.manual_seed(0)
+    config = configuration.Inkling2LoopConfig(
+        text_config={
+            "hidden_size": 32,
+            "num_hidden_layers": 4,
+            "num_attention_heads": 2,
+            "num_key_value_heads": 1,
+            "head_dim": 8,
+            "intermediate_size": 16,
+            "n_routed_experts": 3,
+            "num_experts_per_tok": 2,
+            "moe_intermediate_size": 8,
+            "vocab_size": 64,
+            "unpadded_vocab_size": 64,
+            "n_layers_per_attn_res_block": 2,
+            "d_rel": 2,
+            "rel_extent": 4,
+            "sliding_window_size": 4,
+            "loop_config": {"core_start": 2, "core_end": 4, "num_passes": 2, "gate_rank": 4},
+        },
+        vision_config={
+            "hidden_size": 16,
+            "num_hidden_layers": 1,
+            "num_attention_heads": 2,
+            "projection_hidden_dim": 16,
+            "text_hidden_size": 32,
+        },
+    )
+    model = modeling.Inkling2LoopForConditionalGeneration(config).eval()
+    input_ids = torch.tensor([[1, 2, 3, 4, 5]])
+
+    with torch.no_grad():
+        expected = model(input_ids=input_ids, use_cache=False).logits
+
+    containers = [module for name, module in model.named_modules() if name.endswith(".mlp.experts")]
+    assert len(containers) == config.text_config.num_hidden_layers
+    assert all(hasattr(container, "gate_up_proj") for container in containers)
+
+    assert convert_model(model, cleanup_original=False) is True
+
+    containers = [module for name, module in model.named_modules() if name.endswith(".mlp.experts")]
+    assert len(containers) == config.text_config.num_hidden_layers
+    for container in containers:
+        assert not hasattr(container, "gate_up_proj")
+        assert not hasattr(container, "down_proj")
+        for index in range(config.text_config.n_routed_experts):
+            expert = container.get_submodule(str(index))
+            assert isinstance(expert.gate_proj, nn.Linear)
+            assert isinstance(expert.up_proj, nn.Linear)
+            assert isinstance(expert.down_proj, nn.Linear)
 
     with torch.no_grad():
         actual = model(input_ids=input_ids, use_cache=False).logits
